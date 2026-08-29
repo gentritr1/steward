@@ -1236,7 +1236,7 @@ function renderCourseRows(lessons, allLessons, currentLesson, selectedLesson, cu
     return `
       <li data-course-state="${isCurrent ? "current" : isAvailable ? "available" : "future"}" ${isLogged ? 'data-logged="true"' : ""}>
         ${isAvailable ? `
-          <button type="button" data-lesson-choice="${escapeHtml(lesson.id)}" aria-pressed="${isSelected}">
+          <button type="button" data-lesson-choice="${escapeHtml(lesson.id)}" data-lesson-number="${lessonNumber}" aria-pressed="${isSelected}">
             <span class="ladder-node mono-num" aria-hidden="true">${node}</span>
             <span class="ladder-copy">
               <span>${escapeHtml(label)}</span>
@@ -2637,6 +2637,7 @@ function stewardShellOpen() {
   stewardShellEl.removeAttribute("inert");
   stewardShellEl.removeAttribute("aria-hidden");
   stewardBadge?.setAttribute("aria-expanded", "true");
+  stewardConvoCheck();
   /* the panel is only clipped, never visibility-hidden, so it can take focus at once */
   stewardShellEl.querySelector("button:not([disabled])")?.focus({ preventScroll: true });
 }
@@ -2656,6 +2657,342 @@ function stewardShellClose(returnFocus = true) {
 function stewardShellToggle() {
   if (stewardShellOpenState) stewardShellClose();
   else stewardShellOpen();
+}
+
+/* ---------- Steward · the conversation (tier 3, local assistant) ----------
+
+   Everything the server says lands in a text node. Nothing from an envelope is
+   ever concatenated into markup, ever used as a label, and ever used as a
+   selector without being matched against a hardcoded mirror first. The local
+   server is trusted today; this code has to stay safe when it is not.       */
+
+const STEWARD_TURN_LIMIT = 6;
+const STEWARD_EXPRESSION_MS = 7000;
+const STEWARD_ASK_TIMEOUT_MS = 20000;
+const STEWARD_ASK_MAX = 500;
+
+const STEWARD_ASK_FAILURE = "the local brief is still here. try again.";
+const STEWARD_ASK_OFFLINE = "assistant offline. the brief is the source of truth.";
+
+/* provider → receipt. An unknown provider gets no receipt at all: the line is a
+   privacy claim, and a claim we cannot make from our own table is not made. */
+const STEWARD_RECEIPTS = new Map([["local", "local · nothing left this mac"]]);
+
+/* measured is the unmarked case — everything else says so in front of the words */
+const STEWARD_EPISTEMIC = {
+  inferred: { mark: "~", label: "inferred" },
+  unavailable: { mark: "·", label: "unavailable" },
+  simulated: { mark: "≈", label: "simulated" },
+};
+
+const STEWARD_EXPRESSIONS = new Set(["calm", "pleased", "watchful", "concerned"]);
+
+/* the client-side mirror of the server allowlist. A next step that is not on
+   this list renders nothing — no button, no message, no console noise. */
+const STEWARD_RECEIPT_TARGETS = {
+  "disk.history": ".trend-panel",
+  coverage: ".coverage-panel",
+  events: "#timeline",
+};
+const STEWARD_CHANNEL_TARGETS = new Set(["today", "storage", "learn", "routines", "timeline", "trust"]);
+const STEWARD_RECLAIM_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const STEWARD_RECLAIM_ID_MAX = 40;
+const STEWARD_LESSON_TARGET = /^(?:current|day-(?:[1-9]|[12][0-9]|30))$/;
+
+const stewardConvo = stewardDock?.querySelector("[data-steward-convo]");
+const stewardLogEl = stewardDock?.querySelector("[data-steward-log]");
+const stewardPromptForm = stewardDock?.querySelector("[data-steward-prompt]");
+const stewardInput = stewardDock?.querySelector("[data-steward-input]");
+const stewardAskKey = stewardDock?.querySelector("[data-steward-ask]");
+
+const stewardTurns = [];
+let stewardAskInFlight = false;
+let stewardAskOffline = false;
+let stewardConvoChecked = false;
+let stewardExpressionTimer = null;
+
+/* ---- the expression · a temporary read on the eyes ----
+   data-state belongs to the telemetry. This attribute never touches it: it
+   moves the eyes for seven seconds and then gets out of the way. */
+
+function stewardExpress(expression) {
+  if (!stewardDock || !STEWARD_EXPRESSIONS.has(expression)) return;
+  clearTimeout(stewardExpressionTimer);
+  stewardDock.setAttribute("data-expression", expression);
+  stewardExpressionTimer = setTimeout(() => {
+    stewardDock.removeAttribute("data-expression");
+  }, STEWARD_EXPRESSION_MS);
+}
+
+/* ---- the next step · code owns the label and the destination ---- */
+
+function stewardScrollTo(node) {
+  if (!node) return;
+  node.scrollIntoView({ behavior: motionReduced() ? "auto" : "smooth", block: "start" });
+}
+
+function stewardResolveNextStep(nextStep) {
+  if (!nextStep || typeof nextStep !== "object") return null;
+  const actionId = typeof nextStep.actionId === "string" ? nextStep.actionId : "";
+  const targetId = typeof nextStep.targetId === "string" ? nextStep.targetId : "";
+
+  if (actionId === "show_receipt") {
+    if (!Object.hasOwn(STEWARD_RECEIPT_TARGETS, targetId)) return null;
+    const node = document.querySelector(STEWARD_RECEIPT_TARGETS[targetId]);
+    if (!node) return null;
+    return {
+      label: "SHOW ME",
+      run: () => {
+        stewardShellClose(false);
+        stewardScrollTo(node);
+      },
+    };
+  }
+
+  if (actionId === "open_channel") {
+    if (!STEWARD_CHANNEL_TARGETS.has(targetId)) return null;
+    const node = document.getElementById(targetId);
+    if (!node) return null;
+    return {
+      label: "OPEN",
+      run: () => {
+        stewardShellClose(false);
+        stewardScrollTo(node);
+      },
+    };
+  }
+
+  if (actionId === "open_reclaim_item") {
+    /* shape first, then presence — an id the deck never rendered is not openable */
+    if (targetId.length > STEWARD_RECLAIM_ID_MAX || !STEWARD_RECLAIM_ID.test(targetId)) return null;
+    const details = document.querySelector(`.recommendation[data-reclaim-id="${CSS.escape(targetId)}"]`);
+    if (!details) return null;
+    return {
+      label: "OPEN",
+      run: () => {
+        stewardShellClose(false);
+        details.open = true;
+        details.querySelector("summary")?.focus({ preventScroll: true });
+        stewardScrollTo(details);
+      },
+    };
+  }
+
+  if (actionId === "show_lesson") {
+    if (!STEWARD_LESSON_TARGET.test(targetId)) return null;
+    const learn = document.querySelector("#learn");
+    if (!learn) return null;
+    if (targetId === "current") {
+      return {
+        label: "OPEN",
+        run: () => {
+          stewardShellClose(false);
+          stewardScrollTo(learn);
+        },
+      };
+    }
+    const day = Number(targetId.slice(4));
+    const choice = document.querySelector(`[data-lesson-choice][data-lesson-number="${CSS.escape(String(day))}"]`);
+    if (!choice) return null;
+    return {
+      label: "OPEN",
+      run: () => {
+        stewardShellClose(false);
+        /* the ladder owns lesson selection — this only drives the real control */
+        choice.click();
+        stewardScrollTo(document.querySelector("#learn") || learn);
+      },
+    };
+  }
+
+  return null;
+}
+
+/* ---- the log ---- */
+
+function stewardMark(text) {
+  const mark = document.createElement("span");
+  mark.className = "steward-turn-mark";
+  mark.setAttribute("aria-hidden", "true");
+  mark.textContent = text;
+  return mark;
+}
+
+function stewardScrollLog() {
+  if (!stewardLogEl) return;
+  stewardLogEl.scrollTop = stewardLogEl.scrollHeight;
+}
+
+function stewardOpenTurn(text) {
+  if (!stewardLogEl) return null;
+  const turn = document.createElement("div");
+  turn.className = "steward-turn";
+  const line = document.createElement("p");
+  line.className = "steward-turn-you";
+  line.append(stewardMark("▸ "), document.createTextNode(`you · ${text}`));
+  turn.appendChild(line);
+  stewardLogEl.appendChild(turn);
+  stewardTurns.push(turn);
+  /* the memory and the DOM are trimmed together — six turns, nothing stored */
+  while (stewardTurns.length > STEWARD_TURN_LIMIT) stewardTurns.shift()?.remove();
+  stewardScrollLog();
+  return turn;
+}
+
+function stewardReplyLine(turn, text, epistemicState) {
+  if (!turn) return;
+  const line = document.createElement("p");
+  line.className = "steward-turn-reply";
+  line.appendChild(stewardMark("▸ "));
+  const flag = Object.hasOwn(STEWARD_EPISTEMIC, epistemicState) ? STEWARD_EPISTEMIC[epistemicState] : null;
+  if (flag) {
+    const badge = document.createElement("span");
+    badge.className = "steward-turn-epistemic";
+    badge.textContent = flag.mark;
+    badge.title = `${flag.label} — not a direct measurement`;
+    badge.setAttribute("role", "img");
+    badge.setAttribute("aria-label", `${flag.label} answer`);
+    line.append(badge, document.createTextNode(" "));
+  }
+  /* the only place a server string is written, and it is written as text */
+  line.appendChild(document.createTextNode(text));
+  turn.appendChild(line);
+  if (liveRegion) liveRegion.textContent = text;
+  stewardScrollLog();
+}
+
+function stewardReceiptLine(turn, provider) {
+  const receipt = typeof provider === "string" ? STEWARD_RECEIPTS.get(provider) : null;
+  if (!turn || !receipt) return;
+  const line = document.createElement("p");
+  line.className = "steward-receipt";
+  line.textContent = receipt;
+  turn.appendChild(line);
+}
+
+function stewardActionKey(turn, nextStep) {
+  const action = stewardResolveNextStep(nextStep);
+  if (!turn || !action) return;
+  const row = document.createElement("p");
+  row.className = "steward-turn-action";
+  const key = document.createElement("button");
+  key.type = "button";
+  key.className = "steward-key";
+  const label = document.createElement("span");
+  label.textContent = action.label;
+  key.appendChild(label);
+  key.addEventListener("click", action.run);
+  row.appendChild(key);
+  turn.appendChild(row);
+  stewardScrollLog();
+}
+
+/* ---- the prompt row ---- */
+
+function stewardAskBusy(busy) {
+  if (stewardInput) stewardInput.disabled = busy;
+  if (stewardAskKey) stewardAskKey.disabled = busy;
+  stewardConvo?.setAttribute("aria-busy", String(busy));
+}
+
+/* the row is replaced, not hidden: with no endpoint there is nothing to ask */
+function stewardAskGoOffline() {
+  stewardAskOffline = true;
+  stewardAskBusy(false);
+  if (!stewardPromptForm?.isConnected) return;
+  const note = document.createElement("p");
+  note.className = "steward-offline";
+  note.textContent = STEWARD_ASK_OFFLINE;
+  stewardPromptForm.replaceWith(note);
+}
+
+/* the same settle the charge gesture uses — he returns to the state the
+   telemetry last put him in, never to a state this path invented */
+function stewardAskSettle() {
+  if (!stewardDock) return;
+  if (stewardDock.getAttribute("data-state") !== "scanning") return;
+  stewardSet(stewardRestState);
+}
+
+async function stewardAsk(raw) {
+  if (stewardAskInFlight || stewardAskOffline || !stewardLogEl) return;
+  const message = String(raw || "").trim().slice(0, STEWARD_ASK_MAX);
+  if (!message) return;
+
+  if (stewardInput) stewardInput.value = "";
+  const turn = stewardOpenTurn(message);
+  stewardAskInFlight = true;
+  stewardAskBusy(true);
+  /* honest: a fetch really is in flight, and scanning is the state that says so */
+  stewardSet("scanning");
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), STEWARD_ASK_TIMEOUT_MS);
+  let offline = false;
+
+  try {
+    const response = await fetch("/api/assistant", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      /* the body is exactly the two fields the contract allows */
+      body: JSON.stringify({ message, mode: "local" }),
+      signal: controller.signal,
+    });
+
+    if (response.status === 501 || response.status === 404) {
+      offline = true;
+      stewardReplyLine(turn, STEWARD_ASK_OFFLINE, "unavailable");
+    } else if (!response.ok) {
+      stewardReplyLine(turn, STEWARD_ASK_FAILURE, "unavailable");
+    } else {
+      const envelope = await response.json();
+      const text = typeof envelope?.message === "string" ? envelope.message.trim() : "";
+      if (!text) {
+        stewardReplyLine(turn, STEWARD_ASK_FAILURE, "unavailable");
+      } else {
+        stewardReplyLine(turn, text, envelope.epistemicState);
+        stewardReceiptLine(turn, envelope.provider);
+        stewardActionKey(turn, envelope.nextStep);
+        stewardExpress(envelope?.presentation?.expression);
+      }
+    }
+  } catch {
+    /* a dropped connection, a timeout, a body that is not json — one line, no retry */
+    stewardReplyLine(turn, STEWARD_ASK_FAILURE, "unavailable");
+  } finally {
+    clearTimeout(timer);
+    stewardAskInFlight = false;
+    stewardAskSettle();
+    if (offline) stewardAskGoOffline();
+    else {
+      stewardAskBusy(false);
+      if (stewardShellOpenState) stewardInput?.focus({ preventScroll: true });
+    }
+  }
+}
+
+/* one request-free check, on first open: if this build cannot make the call at
+   all, the row says so instead of pretending to be a prompt */
+function stewardConvoCheck() {
+  if (stewardConvoChecked) return;
+  stewardConvoChecked = true;
+  if (typeof fetch !== "function") stewardAskGoOffline();
+}
+
+function setupStewardConvo() {
+  if (!stewardPromptForm) return;
+  stewardPromptForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    stewardAsk(stewardInput?.value);
+  });
+  stewardInput?.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    /* first Escape leaves the field, second one closes the shell — so the key
+       never throws away a half-typed question */
+    event.stopPropagation();
+    stewardInput.blur();
+    stewardBadge?.focus({ preventScroll: true });
+  });
 }
 
 /* ---- the voice bank ---- */
@@ -2862,6 +3199,7 @@ function setupSteward() {
     if (event.key !== "Escape" || !stewardShellOpenState) return;
     stewardShellClose();
   });
+  setupStewardConvo();
   stewardApplyCells(stewardDock.getAttribute("data-state"));
   stewardArmIdle();
 }

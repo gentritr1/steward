@@ -4274,11 +4274,17 @@ p.timeline-details {
 }
 
 .steward-dock[data-shell="open"] .steward-shell {
-  max-height: 200px;
+  max-height: min(460px, 70vh);
   transition: max-height 90ms var(--ease-entrance) 90ms;
 }
 
+/* the brief panel and the conversation are two stacked wells; the inner column
+   is what caps the shell, so the prompt row can never be pushed out of view */
 .steward-shell-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: min(460px, 70vh);
   overflow: hidden;
 }
 
@@ -4482,6 +4488,178 @@ p.timeline-details {
   color: var(--signal);
 }
 
+/* ---- tier 3 · the conversation ----
+   Same well as the brief panel, one column below it. The log scrolls inside
+   itself; the prompt row is never part of that scroll. */
+
+.steward-convo {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  padding: 10px;
+  background: var(--well);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-sm);
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+
+.steward-convo-log {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 190px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* an empty log takes no room at all — the shell opens at its old height */
+.steward-convo-log:empty {
+  display: none;
+}
+
+.steward-turn {
+  margin: 0 0 8px;
+  animation: steward-turn-in 200ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+
+.steward-turn:last-child {
+  margin-bottom: 0;
+}
+
+@keyframes steward-turn-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.steward-turn-you,
+.steward-turn-reply {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.steward-turn-you {
+  color: var(--text-3);
+}
+
+.steward-turn-reply {
+  color: var(--text);
+}
+
+.steward-turn-mark {
+  color: var(--signal);
+}
+
+/* anything that is not a direct measurement carries its own mark */
+.steward-turn-epistemic {
+  color: var(--amber);
+}
+
+.steward-receipt {
+  margin: 2px 0 0;
+  font-size: 0.55rem;
+  letter-spacing: 0.05em;
+  color: var(--text-3);
+}
+
+.steward-turn-action {
+  margin: 5px 0 0;
+}
+
+.steward-prompt {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid color-mix(in oklch, var(--rule) 55%, transparent);
+}
+
+.steward-prompt-mark {
+  flex: none;
+  color: var(--signal);
+}
+
+.steward-prompt-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 4px 2px;
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--rule-bright);
+  border-radius: 0;
+}
+
+.steward-prompt-input::placeholder {
+  color: var(--text-3);
+}
+
+.steward-prompt-input:disabled,
+.steward-ask-key:disabled {
+  opacity: 0.45;
+}
+
+.steward-offline {
+  flex: none;
+  margin: 0;
+  padding-top: 8px;
+  border-top: 1px solid color-mix(in oklch, var(--rule) 55%, transparent);
+  color: var(--text-3);
+}
+
+/* a finger needs a real target; a cursor keeps the compact row */
+@media (pointer: coarse) {
+  .steward-prompt-input {
+    min-height: 44px;
+  }
+}
+
+/* ---- expression · a temporary read, eyes only ----
+   data-state owns the body, the grid and the pose; this attribute may only
+   move the eyes, and JS removes it after ~7s. It is declared after the state
+   bank so it wins the tie on equal specificity. */
+
+.steward-dock[data-expression="calm"] {
+  --eye-h: 10px;
+  --eye-color: var(--signal);
+}
+
+.steward-dock[data-expression="pleased"] {
+  --eye-h: 13px;
+  --eye-color: var(--signal);
+}
+
+.steward-dock[data-expression="watchful"] {
+  --eye-h: 8px;
+}
+
+/* the lean is the eye pair tilting — the body never moves, and the gaze
+   transform on .steward-face stays untouched */
+.steward-dock[data-expression="watchful"] .steward-eye:first-child {
+  transform: translateY(1.5px);
+}
+
+.steward-dock[data-expression="watchful"] .steward-eye:last-child {
+  transform: translateY(-1.5px);
+}
+
+.steward-dock[data-expression="concerned"] {
+  --eye-h: 7px;
+  --eye-color: var(--amber);
+}
+
 @media (max-width: 760px) {
   .steward-dock {
     right: 12px;
@@ -4526,8 +4704,18 @@ p.timeline-details {
     max-height: 62vh;
   }
 
-  .steward-shell-panel {
+  /* 62vh has to hold candidates + log + prompt, so the two scrollers split it
+     and the prompt row keeps its own space out of the division */
+  .steward-shell-inner {
     max-height: 62vh;
+  }
+
+  .steward-shell-panel {
+    max-height: 28vh;
+  }
+
+  .steward-convo-log {
+    max-height: 24vh;
   }
 
   /* the scope needs a pointer and horizontal room; the strip carries the same
@@ -4612,6 +4800,16 @@ p.timeline-details {
 
   .steward-stamp {
     animation: none;
+  }
+
+  /* a new turn still arrives, it just does not travel */
+  @keyframes steward-turn-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
   }
 
   /* the briefing reports all at once */

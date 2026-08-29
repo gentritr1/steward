@@ -81,7 +81,30 @@
 
     <div class="steward-dock" id="steward" data-steward data-state="resting" data-shell="closed">
       <div class="steward-shell" data-steward-shell aria-hidden="true" inert>
-        <div class="steward-shell-inner" data-steward-shell-body></div>
+        <div class="steward-shell-inner">
+          <!-- the brief panel is re-rendered on every refresh; the conversation below it is not -->
+          <div data-steward-shell-body></div>
+          <div class="steward-convo" data-steward-convo>
+            <div class="steward-convo-log" data-steward-log></div>
+            <form class="steward-prompt" data-steward-prompt novalidate>
+              <span class="steward-prompt-mark" aria-hidden="true">▸</span>
+              <label class="sr-only" for="steward-ask-input">Ask Steward</label>
+              <input
+                class="steward-prompt-input"
+                id="steward-ask-input"
+                data-steward-input
+                type="text"
+                maxlength="500"
+                autocomplete="off"
+                autocapitalize="off"
+                autocorrect="off"
+                spellcheck="false"
+                placeholder="ask about the brief"
+              />
+              <button class="steward-key steward-ask-key" type="submit" data-steward-ask aria-label="Ask Steward"><span>ASK</span></button>
+            </form>
+          </div>
+        </div>
       </div>
       <div class="steward-row">
         <p class="steward-line" data-steward-line aria-hidden="true" hidden></p>
