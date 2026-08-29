@@ -100,6 +100,193 @@ const MESSAGE_RULES = [
   [/[\u0000-\u001f\u007f]/, "message must not contain control characters"],
 ];
 
+/* ---------------------------------------------------------------------------
+   Numbers in the prose must come from the packet.
+
+   Citing the right evidence id and then printing the wrong digits is the
+   fabrication this file did not previously catch: "99 GB free" citing
+   disk.availableBytes passed every check while being false. So the message is
+   scanned for digit-based claims and each one must match a number the packet
+   can actually produce.
+
+   Scope, stated plainly: only DIGIT-based claims are extracted. Word-numbers
+   ("one reading", "half the disk", "a couple of lessons") are out of scope and
+   are never checked — spelling a number out is a way past this gate, and the
+   local generator's "one reading. nothing to compare it to." is exactly such a
+   sentence. A bare number with no recognised context ("42") is also not a
+   claim; a number is only a claim when it carries a unit or a counted noun.
+   --------------------------------------------------------------------------- */
+
+const BYTE_UNITS = ["B", "KB", "MB", "GB", "TB"];
+
+function stripGrouping(text) {
+  return text.replace(/,/g, "");
+}
+
+/* one token per (kind, number) pair, so a percent can never satisfy a count
+   claim and a byte figure can never satisfy a percentage */
+function claimToken(kind, number, unit = "") {
+  return `${kind}:${stripGrouping(String(number)).toLowerCase()}${unit}`;
+}
+
+/* the dashboard's formatBytes rounding, reimplemented here rather than imported:
+   divide by 1024 while the amount allows it, then 0 fraction digits at or above
+   100 (and for raw bytes), 1 below it. The acceptable set carries the 0- and
+   1-decimal forms of every value, in both the grouped Intl spelling and the
+   padded toFixed spelling, because a truthful sentence may legitimately use any
+   of them ("4 GB", "4.0 GB", "200 GB"). */
+function byteTokens(value) {
+  let amount = Math.max(0, value);
+  let unitIndex = 0;
+  while (amount >= 1024 && unitIndex < BYTE_UNITS.length - 1) {
+    amount /= 1024;
+    unitIndex += 1;
+  }
+
+  const unit = BYTE_UNITS[unitIndex].toLowerCase();
+  const spellings = [
+    new Intl.NumberFormat("en", { maximumFractionDigits: 0 }).format(amount),
+    new Intl.NumberFormat("en", { maximumFractionDigits: 1 }).format(amount),
+    amount.toFixed(0),
+    amount.toFixed(1),
+  ];
+  return spellings.map((spelling) => claimToken("bytes", spelling, unit));
+}
+
+function percentTokens(value) {
+  const spellings = [
+    new Intl.NumberFormat("en", { maximumFractionDigits: 0 }).format(value),
+    new Intl.NumberFormat("en", { maximumFractionDigits: 1 }).format(value),
+    value.toFixed(0),
+    value.toFixed(1),
+  ];
+  return spellings.map((spelling) => claimToken("percent", spelling));
+}
+
+function countTokens(value) {
+  return [claimToken("count", Math.round(value))];
+}
+
+function tokensForUnit(unit, value) {
+  if (unit === "bytes") return byteTokens(value);
+  if (unit === "percent") return percentTokens(value);
+  return countTokens(value);
+}
+
+/**
+ * Every number a truthful sentence could print, given this packet.
+ *
+ * Deliberately small. Three sources, and nothing else:
+ *   (a) each raw evidence value, in the formats its unit permits;
+ *   (b) usedPercent recomputed from disk.usedBytes / disk.capacityBytes, since
+ *       that division is arithmetic on two readings the packet already holds;
+ *   (c) reclaim.safeBytes + reclaim.reviewBytes, the one total a reply is
+ *       allowed to add up.
+ * Any other derivation — capacity minus used, per-item sums, a share of a
+ * category — is NOT acceptable and its number will be rejected. Widening this
+ * set is a deliberate decision, never a fix for a failing sentence.
+ *
+ * @param {{evidence?: Record<string, {value: number, unit: string}>}} packet
+ * @returns {Set<string>} namespaced tokens, e.g. "bytes:200gb", "percent:80", "count:7"
+ */
+export function buildAcceptableNumbers(packet) {
+  const acceptable = new Set();
+  const evidence = packet?.evidence ?? {};
+
+  const numberAt = (id) => {
+    const entry = evidence[id];
+    return entry && typeof entry.value === "number" && Number.isFinite(entry.value) ? entry.value : null;
+  };
+
+  for (const [, entry] of Object.entries(evidence)) {
+    if (!entry || typeof entry.value !== "number" || !Number.isFinite(entry.value)) continue;
+    for (const token of tokensForUnit(entry.unit, entry.value)) acceptable.add(token);
+  }
+
+  const usedBytes = numberAt("disk.usedBytes");
+  const capacityBytes = numberAt("disk.capacityBytes");
+  if (usedBytes !== null && capacityBytes !== null && capacityBytes > 0) {
+    for (const token of percentTokens((usedBytes / capacityBytes) * 100)) acceptable.add(token);
+  }
+
+  const safeBytes = numberAt("reclaim.safeBytes");
+  const reviewBytes = numberAt("reclaim.reviewBytes");
+  if (safeBytes !== null && reviewBytes !== null) {
+    for (const token of byteTokens(safeBytes + reviewBytes)) acceptable.add(token);
+  }
+
+  return acceptable;
+}
+
+const NUMBER = "\\d[\\d,]*(?:\\.\\d+)?";
+
+/* order is meaningful: each rule's matches are blanked out of the text before
+   the next rule runs, so "8.6 gb of 12 gb" yields two byte claims and not a
+   spurious "8.6 of 12" count, and "lesson 7 of 7" yields two counts once. */
+const CLAIM_RULES = [
+  { kind: "bytes", pattern: new RegExp(`(${NUMBER})\\s*(b|kb|mb|gb|tb)\\b`, "gi"), groups: [1], unitGroup: 2 },
+  { kind: "percent", pattern: new RegExp(`(${NUMBER})\\s*(?:%|percent\\b)`, "gi"), groups: [1] },
+  { kind: "count", pattern: new RegExp(`(${NUMBER})\\s+of\\s+(${NUMBER})`, "gi"), groups: [1, 2] },
+  {
+    kind: "count",
+    pattern: new RegExp(
+      `(${NUMBER})\\s+(?:readings?|copies|copy|items?|lessons?|days?|files?|folders?|projects?|snapshots?)\\b`,
+      "gi",
+    ),
+    groups: [1],
+  },
+  { kind: "count", pattern: new RegExp(`(${NUMBER})\\s*(?:×|x(?![a-z]))`, "gi"), groups: [1] },
+  { kind: "count", pattern: new RegExp(`\\b(?:day|lesson)\\s+(${NUMBER})`, "gi"), groups: [1] },
+];
+
+/**
+ * Pull the digit-based numeric claims, with their context, out of a message.
+ *
+ * @param {string} message
+ * @returns {{raw: string, kind: "bytes"|"percent"|"count", value: number, token: string}[]}
+ *   one entry per distinct claim, deduplicated by kind and value, grouped in
+ *   rule order (byte claims first, then percentages, then counts)
+ */
+export function extractNumericClaims(message) {
+  if (typeof message !== "string") return [];
+
+  let remaining = message;
+  const claims = [];
+  const seen = new Set();
+
+  for (const rule of CLAIM_RULES) {
+    const spans = [];
+    rule.pattern.lastIndex = 0;
+    let match = rule.pattern.exec(remaining);
+
+    while (match !== null) {
+      spans.push([match.index, match.index + match[0].length]);
+      const unit = rule.unitGroup ? match[rule.unitGroup].toLowerCase() : "";
+      for (const group of rule.groups) {
+        const raw = match[group];
+        const token = claimToken(rule.kind, raw, unit);
+        if (!seen.has(token)) {
+          seen.add(token);
+          claims.push({
+            raw: rule.groups.length === 1 ? match[0].trim() : raw,
+            kind: rule.kind,
+            value: Number(stripGrouping(raw)),
+            token,
+          });
+        }
+      }
+      match = rule.pattern.exec(remaining);
+    }
+
+    /* blank the consumed spans, keeping length so later indices stay honest */
+    for (const [start, end] of spans) {
+      remaining = remaining.slice(0, start) + " ".repeat(end - start) + remaining.slice(end);
+    }
+  }
+
+  return claims;
+}
+
 function typeName(value) {
   if (value === null) return "null";
   if (Array.isArray(value)) return "array";
@@ -205,8 +392,14 @@ function checkNextStep(nextStep, knownReclaimIds, errors) {
 /**
  * Validate one candidate envelope.
  *
+ * Supplying `packet` turns on the numeric cross-check: every digit-based claim
+ * in the message must be a number the packet can produce. Omitting it leaves
+ * behaviour exactly as it was, so existing callers are unaffected — but a
+ * caller that has the packet in hand and does not pass it is choosing to let
+ * fabricated digits through.
+ *
  * @param {unknown} candidate
- * @param {{knownEvidenceIds?: string[], knownReclaimIds?: string[]}} [context]
+ * @param {{knownEvidenceIds?: string[], knownReclaimIds?: string[], packet?: object}} [context]
  * @returns {{ok: boolean, errors: string[]}}
  */
 export function validateEnvelope(candidate, context = {}) {
@@ -236,6 +429,15 @@ export function validateEnvelope(candidate, context = {}) {
 
   for (const [pattern, message] of MESSAGE_RULES) {
     if (pattern.test(candidate.message)) errors.push(message);
+  }
+
+  if (context.packet) {
+    const acceptable = buildAcceptableNumbers(context.packet);
+    for (const claim of extractNumericClaims(candidate.message)) {
+      if (!acceptable.has(claim.token)) {
+        errors.push(`message: the ${claim.kind} claim "${claim.raw}" is not a number in the evidence packet`);
+      }
+    }
   }
 
   return { ok: errors.length === 0, errors };

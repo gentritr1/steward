@@ -240,6 +240,7 @@ export function answerLocal(request) {
   const result = validateEnvelope(candidate, {
     knownEvidenceIds: packet.evidenceIds ?? [],
     knownReclaimIds: (packet.reclaimItems ?? []).map((item) => item.id),
+    packet,
   });
 
   /* a local branch that breaks the contract is a bug in this file, and it fails
