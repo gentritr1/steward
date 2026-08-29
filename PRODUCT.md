@@ -14,15 +14,15 @@ Steward turns quiet operational drift into a short, useful daily story. Draft 1 
 
 ## Brand Personality
 
-Observant, composed, characterful. Steward should feel like a perceptive presence with excellent judgment: concise enough to trust, slightly wry when appropriate, and never theatrical. Its character leads the experience; automation remains quiet infrastructure underneath.
+Observant, composed, wry. Steward // Ground Control reads like an instrument panel for one machine, with a small character docked in the corner of it. That character is a perceptive presence with excellent judgment: it speaks in a lowercase console voice, in short lines, without exclamation, and it is funnier about its own posture than about your disk. It is playful in form and never in truthfulness — it will refuse, say it has only one reading, or say nothing at all rather than assert something the collector did not record. Its character leads the experience; automation remains quiet infrastructure underneath.
 
 ## Anti-references
 
 - Generic SaaS admin dashboards built from identical metric cards
-- Hacker terminals, cyber-security theatrics, and alarming red system monitors
+- Alarm theater and manufactured urgency: red system monitors, cyber-security dramatics, and countdowns for problems that are not happening
 - Sterile macOS utility clones with no point of view
-- Cute mascots or game-like streaks that trivialize personal data and system health
-- Cleaner apps that manufacture urgency, hide risk, or encourage one-click deletion
+- Mascots that trivialize risk or oversell — Steward is a character with judgment, not a cheerleader
+- Cleaner apps that hide risk or encourage one-click deletion
 - Opaque health scores and unsupported predictions
 
 ## Design Principles

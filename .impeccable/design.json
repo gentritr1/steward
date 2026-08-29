@@ -1,100 +1,139 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-08-29T13:13:57Z",
-  "title": "Design System: Steward",
+  "generatedAt": "2026-08-30T00:00:00Z",
+  "title": "Design System: Steward // Ground Control",
   "extensions": {
     "colorMeta": {
-      "honey-signal": {
+      "signal": {
         "role": "primary",
-        "displayName": "Honey Signal",
-        "canonical": "oklch(0.842 0.165 91.3)",
-        "tonalRamp": ["oklch(0.15 0.05 91.3)", "oklch(0.27 0.08 91.3)", "oklch(0.39 0.11 91.3)", "oklch(0.51 0.14 91.3)", "oklch(0.63 0.16 91.3)", "oklch(0.75 0.165 91.3)", "oklch(0.86 0.13 91.3)", "oklch(0.95 0.05 91.3)"]
+        "displayName": "Signal",
+        "canonical": "oklch(0.86 0.2 130)",
+        "tonalRamp": ["oklch(0.15 0.06 130)", "oklch(0.27 0.09 130)", "oklch(0.39 0.12 130)", "oklch(0.51 0.15 130)", "oklch(0.63 0.18 130)", "oklch(0.75 0.2 130)", "oklch(0.86 0.2 130)", "oklch(0.95 0.07 130)"]
       },
-      "steward-blue": {
+      "plasma": {
         "role": "secondary",
-        "displayName": "Steward Blue",
-        "canonical": "oklch(0.32 0.105 277)",
-        "tonalRamp": ["oklch(0.15 0.045 277)", "oklch(0.25 0.08 277)", "oklch(0.35 0.105 277)", "oklch(0.47 0.09 277)", "oklch(0.59 0.07 277)", "oklch(0.71 0.05 277)", "oklch(0.83 0.03 277)", "oklch(0.95 0.012 277)"]
+        "displayName": "Plasma",
+        "canonical": "oklch(0.8 0.14 205)",
+        "tonalRamp": ["oklch(0.15 0.04 205)", "oklch(0.27 0.06 205)", "oklch(0.39 0.08 205)", "oklch(0.51 0.1 205)", "oklch(0.63 0.12 205)", "oklch(0.72 0.135 205)", "oklch(0.8 0.14 205)", "oklch(0.92 0.05 205)"]
       },
-      "steward-ink": {
-        "role": "neutral",
-        "displayName": "Steward Ink",
-        "canonical": "oklch(0.20 0.03 277)",
-        "tonalRamp": ["oklch(0.15 0.025 277)", "oklch(0.25 0.03 277)", "oklch(0.37 0.028 277)", "oklch(0.49 0.024 277)", "oklch(0.61 0.02 277)", "oklch(0.73 0.016 277)", "oklch(0.85 0.01 277)", "oklch(0.95 0.005 277)"]
+      "amber": {
+        "role": "accent",
+        "displayName": "Amber",
+        "canonical": "oklch(0.82 0.15 78)",
+        "tonalRamp": ["oklch(0.15 0.045 78)", "oklch(0.27 0.07 78)", "oklch(0.39 0.09 78)", "oklch(0.51 0.11 78)", "oklch(0.63 0.13 78)", "oklch(0.73 0.145 78)", "oklch(0.82 0.15 78)", "oklch(0.94 0.05 78)"]
       },
-      "quiet-surface": {
+      "violet": {
+        "role": "accent",
+        "displayName": "Violet",
+        "canonical": "oklch(0.72 0.15 300)",
+        "tonalRamp": ["oklch(0.15 0.05 300)", "oklch(0.25 0.07 300)", "oklch(0.35 0.09 300)", "oklch(0.45 0.11 300)", "oklch(0.55 0.13 300)", "oklch(0.64 0.14 300)", "oklch(0.72 0.15 300)", "oklch(0.9 0.05 300)"]
+      },
+      "coral": {
+        "role": "danger",
+        "displayName": "Coral",
+        "canonical": "oklch(0.72 0.17 25)",
+        "tonalRamp": ["oklch(0.15 0.05 25)", "oklch(0.25 0.08 25)", "oklch(0.35 0.11 25)", "oklch(0.45 0.13 25)", "oklch(0.55 0.15 25)", "oklch(0.64 0.16 25)", "oklch(0.72 0.17 25)", "oklch(0.9 0.06 25)"]
+      },
+      "deck": {
         "role": "neutral",
-        "displayName": "Quiet Surface",
-        "canonical": "oklch(0.969 0.008 91.3)",
-        "tonalRamp": ["oklch(0.15 0.008 91.3)", "oklch(0.27 0.008 91.3)", "oklch(0.39 0.008 91.3)", "oklch(0.51 0.008 91.3)", "oklch(0.63 0.008 91.3)", "oklch(0.75 0.008 91.3)", "oklch(0.87 0.008 91.3)", "oklch(0.969 0.008 91.3)"]
+        "displayName": "Deck",
+        "canonical": "oklch(0.225 0.032 264)",
+        "tonalRamp": ["oklch(0.145 0.025 264)", "oklch(0.17 0.028 264)", "oklch(0.225 0.032 264)", "oklch(0.27 0.034 264)", "oklch(0.34 0.03 264)", "oklch(0.56 0.035 264)", "oklch(0.66 0.022 264)", "oklch(0.8 0.02 264)"]
+      },
+      "text": {
+        "role": "neutral",
+        "displayName": "Deck Text",
+        "canonical": "oklch(0.97 0.008 264)",
+        "tonalRamp": ["oklch(0.17 0.028 264)", "oklch(0.34 0.03 264)", "oklch(0.46 0.028 264)", "oklch(0.56 0.035 264)", "oklch(0.66 0.022 264)", "oklch(0.8 0.02 264)", "oklch(0.9 0.012 264)", "oklch(0.97 0.008 264)"]
       }
     },
     "typographyMeta": {
-      "display": { "displayName": "Steward Voice", "purpose": "Daily synthesis and high-level numbers only." },
-      "body": { "displayName": "Working Sans", "purpose": "Evidence, navigation, controls, and supporting prose." },
-      "label": { "displayName": "Quiet Label", "purpose": "Sparse metadata and state labels." }
+      "display": { "displayName": "Space Grotesk", "purpose": "All headings: 700, -0.02em, line-height 1.1. Hero clamps 2rem→2.9rem." },
+      "body": { "displayName": "Inter", "purpose": "Prose, navigation, and controls at 0.95rem/1.55." },
+      "mono": { "displayName": "JetBrains Mono", "purpose": "Every machine value — labels, chips, keycaps, readouts, paths, deltas, axes — always tabular-nums." }
     },
-    "shadows": [],
+    "shadows": [
+      { "name": "panel-sheen", "value": "inset 0 1px 0 oklch(1 0 0 / 0.05)", "purpose": "The single highlight that separates a panel face from the deck." },
+      { "name": "keycap", "value": "0 2px 0 oklch(0.145 0.025 264)", "purpose": "The keycap's travel, collapsed to 0 on :active." },
+      { "name": "instrument-glow", "value": "drop-shadow(0 0 8px color-mix(in oklch, var(--dial-hue) 60%, transparent))", "purpose": "The dial's lit arc and reticle; the mix drops to 14% in the day shift." }
+    ],
     "motion": [
-      { "name": "state-fast", "value": "160ms cubic-bezier(0.4, 0, 0.2, 1)", "purpose": "Hover and selection feedback." },
-      { "name": "state-reveal", "value": "220ms cubic-bezier(0.16, 1, 0.3, 1)", "purpose": "Measured progress and disclosure state changes." }
+      { "name": "fast", "value": "120ms cubic-bezier(0.77, 0, 0.175, 1)", "purpose": "Hover, colour, and scrub response — paired with --ease-move." },
+      { "name": "ui", "value": "180ms cubic-bezier(0.77, 0, 0.175, 1)", "purpose": "Cell ramp changes and face/mouth geometry." },
+      { "name": "enter", "value": "260ms cubic-bezier(0.23, 1, 0.32, 1)", "purpose": "Arrivals — reveals and the character standing up." },
+      { "name": "draw", "value": "640ms cubic-bezier(0.23, 1, 0.32, 1)", "purpose": "The long beat: instrument draw-ins and the 640ms charge before a hold can be filed." }
     ],
     "breakpoints": [
       { "name": "wide", "value": "1040px" },
       { "name": "compact", "value": "760px" },
-      { "name": "narrow", "value": "440px" }
+      { "name": "narrow", "value": "480px" }
     ]
   },
   "components": [
     {
-      "name": "Secondary Button",
+      "name": "Keycap",
       "kind": "button",
-      "refersTo": "button-secondary",
-      "description": "A quiet action that inverts only on intent.",
-      "html": "<button class=\"ds-button\">Refresh view</button>",
-      "css": ".ds-button{border:0;border-radius:6px;padding:8px 12px;background:oklch(0.969 0.008 91.3);color:oklch(0.20 0.03 277);font:680 .78rem Inter,system-ui,sans-serif;transition:background 160ms,color 160ms}.ds-button:hover,.ds-button:focus-visible{background:oklch(0.32 0.105 277);color:white}.ds-button:focus-visible{outline:3px solid oklch(0.52 0.13 78);outline-offset:3px}"
+      "refersTo": "keycap",
+      "description": "The deck's button: a mono cap with 2px of travel that collapses on press.",
+      "html": "<button class=\"ds-keycap\">DAY</button>",
+      "css": ".ds-keycap{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:.68rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:oklch(0.97 0.008 264);background:oklch(0.27 0.034 264);border:2px solid oklch(0.56 0.035 264);border-radius:6px;padding:8px 14px;box-shadow:0 2px 0 oklch(0.145 0.025 264);cursor:pointer;transition:transform 90ms cubic-bezier(0.77,0,0.175,1),box-shadow 90ms cubic-bezier(0.77,0,0.175,1),border-color 120ms,color 120ms}.ds-keycap:hover{border-color:oklch(0.86 0.2 130);color:oklch(0.86 0.2 130)}.ds-keycap:active{transform:translateY(2px);box-shadow:0 0 0 oklch(0.145 0.025 264)}.ds-keycap:focus-visible{outline:2px solid oklch(0.86 0.2 130);outline-offset:2px}"
+    },
+    {
+      "name": "Chip",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "A status pill. The tone class swaps hue, text, border and a 16% fill together — colour never travels alone.",
+      "html": "<span class=\"ds-chip ds-chip-amber\">▲ Worth watching</span>",
+      "css": ".ds-chip{display:inline-flex;align-items:center;gap:6px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:.68rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;white-space:nowrap;color:oklch(0.8 0.02 264);background:oklch(0.27 0.034 264);border:1px solid oklch(0.34 0.03 264);border-radius:999px;padding:4px 10px}.ds-chip-amber{color:oklch(0.82 0.15 78);border-color:color-mix(in oklch,oklch(0.82 0.15 78) 45%,oklch(0.34 0.03 264));background:color-mix(in oklch,oklch(0.82 0.15 78) 16%,transparent)}"
+    },
+    {
+      "name": "Seg Bar",
+      "kind": "custom",
+      "refersTo": "seg",
+      "description": "The core idiom. One hue per bar; the reading is carried by the phosphor ramp alone — dim .10, second .30, lit .62, head .85.",
+      "html": "<div class=\"ds-seg\"><span class=\"on\"></span><span class=\"on\"></span><span class=\"on\"></span><span class=\"on\"></span><span class=\"on\"></span><span class=\"on is-last\"></span><span></span><span></span></div>",
+      "css": ".ds-seg{--seg-hue:oklch(0.86 0.2 130);display:flex;gap:2px;height:10px;width:120px}.ds-seg span{flex:1;border-radius:1px;background:var(--seg-hue);opacity:.1}.ds-seg span.on{opacity:.62}.ds-seg span.is-second{background:oklch(0.72 0.15 300);opacity:.3}.ds-seg span.is-last{opacity:.85}"
+    },
+    {
+      "name": "Panel",
+      "kind": "card",
+      "refersTo": "panel",
+      "description": "A flat deck face. Depth is one inset sheen and a 2px lift on a fine pointer — never an ambient shadow.",
+      "html": "<article class=\"ds-panel\"><p class=\"ds-panel-label\">▸ ROOM ON THE MAC</p><strong>58.4 GB</strong></article>",
+      "css": ".ds-panel{max-width:260px;background:oklch(0.225 0.032 264);border:1px solid oklch(0.34 0.03 264);border-radius:10px;box-shadow:inset 0 1px 0 oklch(1 0 0 / 0.05);padding:22px;color:oklch(0.97 0.008 264);font-family:Inter,system-ui,sans-serif;transition:transform 120ms cubic-bezier(0.77,0,0.175,1),border-color 120ms cubic-bezier(0.77,0,0.175,1)}.ds-panel:hover{transform:translateY(-2px);border-color:oklch(0.56 0.035 264)}.ds-panel-label{margin:0 0 12px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:.68rem;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:oklch(0.66 0.022 264)}.ds-panel strong{font-family:'JetBrains Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums;font-size:2rem}"
+    },
+    {
+      "name": "Notch Panel",
+      "kind": "card",
+      "refersTo": "panel-notch",
+      "description": "The signature instrument housing: a 14px cut corner and two rivets printed in the lower corners.",
+      "html": "<article class=\"ds-notch\"><p>Gauge housing</p></article>",
+      "css": ".ds-notch{position:relative;max-width:260px;background:oklch(0.34 0.03 264);border-radius:10px;padding:22px;color:oklch(0.97 0.008 264);font-family:Inter,system-ui,sans-serif;clip-path:polygon(0 0,calc(100% - 14px) 0,100% 14px,100% 100%,0 100%)}.ds-notch::before{content:'';position:absolute;inset:1px;z-index:0;background:radial-gradient(circle 3px at 10px calc(100% - 10px),oklch(0.56 0.035 264) 0 3px,transparent 3px),radial-gradient(circle 3px at calc(100% - 10px) calc(100% - 10px),oklch(0.56 0.035 264) 0 3px,transparent 3px),oklch(0.225 0.032 264);border-radius:9px;clip-path:polygon(0 0,calc(100% - 14px) 0,100% 14px,100% 100%,0 100%)}.ds-notch>*{position:relative;z-index:1;margin:0}"
     },
     {
       "name": "Risk Badge",
       "kind": "chip",
-      "description": "A textual risk state; color never carries meaning alone.",
-      "html": "<span class=\"ds-risk\">Needs review</span>",
-      "css": ".ds-risk{display:inline-block;border-radius:999px;padding:5px 9px;background:oklch(0.95 0.045 75);color:oklch(0.50 0.125 55);font:720 .65rem Inter,system-ui,sans-serif}"
-    },
-    {
-      "name": "Space Signal",
-      "kind": "custom",
-      "refersTo": "signal-panel",
-      "description": "The single Honey Signal surface in the morning brief.",
-      "html": "<section class=\"ds-signal\"><span>Room on the Mac</span><strong>58.4 GB</strong><p>Comfortable for now.</p></section>",
-      "css": ".ds-signal{max-width:320px;border-radius:14px;padding:30px;background:oklch(0.842 0.165 91.3);color:oklch(0.20 0.03 277)}.ds-signal span{font:730 .71rem Inter,system-ui,sans-serif}.ds-signal strong{display:block;margin-top:16px;font:500 4rem/.9 Georgia,serif;letter-spacing:-.035em}.ds-signal p{margin:18px 0 0;font:680 .82rem/1.5 Inter,system-ui,sans-serif}"
-    },
-    {
-      "name": "Steward Note",
-      "kind": "custom",
-      "refersTo": "steward-note",
-      "description": "The authored analytical voice, never decorative chrome.",
-      "html": "<aside class=\"ds-note\"><span>Steward's note</span><p>One reading is not a trend.</p></aside>",
-      "css": ".ds-note{max-width:360px;border-radius:14px;padding:28px;background:oklch(0.32 0.105 277);color:white}.ds-note span{color:oklch(0.842 0.165 91.3);font:730 .71rem Inter,system-ui,sans-serif}.ds-note p{margin:22px 0 0;font:500 1.5rem/1.25 Georgia,serif;letter-spacing:-.025em}"
-    },
-    {
-      "name": "Evidence Disclosure",
-      "kind": "custom",
-      "description": "Native disclosure for reviewable cleanup evidence.",
-      "html": "<details class=\"ds-evidence\" open><summary>Installed project packages <span>3 GB possible</span></summary><p>Evidence, effect, risk, reversibility, and scope appear before action.</p></details>",
-      "css": ".ds-evidence{border-bottom:1px solid oklch(0.88 0.012 91.3);color:oklch(0.20 0.03 277);font-family:Inter,system-ui,sans-serif}.ds-evidence summary{padding:18px 0;cursor:pointer;font-weight:700}.ds-evidence summary span{float:right;color:oklch(0.46 0.028 277);font-size:.72rem}.ds-evidence p{margin:0 0 20px;color:oklch(0.35 0.035 277);font-size:.8rem;line-height:1.55}.ds-evidence summary:focus-visible{outline:3px solid oklch(0.52 0.13 78);outline-offset:3px}"
+      "refersTo": "risk-badge",
+      "description": "A textual risk state; colour never carries meaning alone. Coral is reserved for risk-high.",
+      "html": "<span class=\"ds-risk ds-risk-review\">Needs review</span>",
+      "css": ".ds-risk{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:.62rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;white-space:nowrap;padding:4px 10px;border-radius:999px;border:1px solid}.ds-risk-safe{color:oklch(0.86 0.2 130);border-color:color-mix(in oklch,oklch(0.86 0.2 130) 45%,oklch(0.34 0.03 264));background:color-mix(in oklch,oklch(0.86 0.2 130) 16%,transparent)}.ds-risk-review{color:oklch(0.82 0.15 78);border-color:color-mix(in oklch,oklch(0.82 0.15 78) 45%,oklch(0.34 0.03 264));background:color-mix(in oklch,oklch(0.82 0.15 78) 16%,transparent)}.ds-risk-high{color:oklch(0.72 0.17 25);border-color:color-mix(in oklch,oklch(0.72 0.17 25) 45%,oklch(0.34 0.03 264));background:color-mix(in oklch,oklch(0.72 0.17 25) 16%,transparent)}"
     }
   ],
   "narrative": {
-    "northStar": "The Morning Steward",
-    "overview": "Steward feels like opening a beautifully edited private briefing at the start of the day. Character lives in the writing, editorial scale shift, honey signal surfaces, and the deep blue-violet voice of Steward itself. Automation stays quiet, legible, and subordinate.",
-    "keyCharacteristics": ["One-minute narrative before deep inspection", "True-white daylight surface with a rare honey signal", "Serif only for authored judgment and high-level numbers", "Dense evidence without identical cards", "Visible uncertainty, reversibility, and scope"],
+    "northStar": "Ground Control",
+    "overview": "Steward is an instrument-dark flight deck for one machine: a lit dial for the number that matters, segmented LED bars for every other quantity, a phosphor scope for the trace over time, and a small character docked in the corner who reports and refuses. Nothing lit is decorative — every lit thing is a reading. A day shift lights the same deck from outside rather than replacing it.",
+    "keyCharacteristics": ["One dial, many segmented bars — quantity has exactly one visual idiom", "Machine data is always mono and always tabular", "A lit thing means a measurement, not an alarm", "Character in the form; literalism in the facts", "Observation only — the strongest gesture files something for review", "Reduced motion is gentler, never blank"],
     "rules": [
-      { "name": "The Honey Rarity Rule", "body": "Honey may carry one dominant surface and a small set of active signals per viewport.", "section": "colors" },
-      { "name": "The Two Voices Rule", "body": "Serif expresses synthesis and judgment. Sans expresses evidence, controls, status, and navigation.", "section": "typography" },
-      { "name": "The Flat-By-Default Rule", "body": "If a container needs a wide soft shadow to feel separate, its spacing or tonal role is wrong.", "section": "elevation" }
+      { "name": "The Hue Law", "body": "A lit arc or bar never changes hue or opacity with its value. Status colour lives on the chip beside the instrument, never in the stroke. Amber belongs to band markers and status chips; coral appears only at 99.5% used or higher, at the 90 marker, on risk-high, or when a reading did not come back.", "section": "colors" },
+      { "name": "The 8 Degree Floor", "body": "Any nonzero dial value draws at least 8 degrees on the 240 degree sweep (12 on the ring). Low is a confident short stroke, never a faint one; a true zero draws nothing.", "section": "instruments" },
+      { "name": "The Seg Idiom", "body": "Every quantity that is not the dial is a segmented LED bar on the ramp 0.10 / 0.30 / 0.62 / 0.85, head cell hot, at most 48 cells, two tones maximum.", "section": "instruments" },
+      { "name": "The One-Motion Rule", "body": "One data-state drives exactly one body animation, so swapping state cancels the previous one outright. Real activity cancels the idle antic instantly, mid-animation.", "section": "motion" },
+      { "name": "The Scan-Bar Truth Rule", "body": "The scan bar and the scope sweep run only during real work. Neither may imply activity that is not happening.", "section": "motion" },
+      { "name": "The Observe-Only Seal", "body": "Deletion never happens. A scheduled observation cannot delete, move, or upload a file; holding something for review is the strongest gesture in the product.", "section": "components" },
+      { "name": "The Calm Status Rule", "body": "Red is not a mood. Growth, review, and uncertainty use ink and amber; coral means full or unreadable, and nothing else.", "section": "colors" },
+      { "name": "Evidence Before Voice", "body": "No character line may assert a cause, folder, or measurement the collector did not record. Only safe, low, and rebuildable count as reclaimable.", "section": "character" }
     ],
-    "dos": ["Do lead every return visit with one plain-language change story.", "Do reserve Honey Signal for the most important status or time cue.", "Do show measured, inferred, unavailable, and too-early-to-call states explicitly."],
-    "donts": ["Don't build generic SaaS admin dashboards from identical metric cards.", "Don't use hacker terminals, cyber-security theatrics, or alarming red system monitors.", "Don't reproduce cleaner-app urgency, hidden risk, or one-click deletion."]
+    "dos": ["Do use one segmented-bar idiom for every quantity that is not the dial.", "Do keep every measured value mono and tabular.", "Do show measured, inferred, unavailable, and too-early-to-call states explicitly.", "Do let the character be playful about its own posture and literal about the data.", "Do name the limit of each channel in its own header."],
+    "donts": ["Don't use alarming red system monitors, alarm theater, or manufactured urgency.", "Don't ship one-click deletion, hidden risk, or a gesture stronger than hold-for-review.", "Don't show opaque health scores or unsupported predictions.", "Don't let the character assert a cause, folder, or measurement the collector did not record.", "Don't dim, recolour, or fade an instrument to express a low value.", "Don't run the scan bar or the scope sweep when no work is happening."]
   }
 }
