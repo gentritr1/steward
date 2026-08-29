@@ -2032,8 +2032,10 @@ async function loadBrief({ announce = false } = {}) {
       setupInteractions();
       freshness.classList.add("has-fallback");
       freshness.querySelector("span:last-child").textContent = "Preview available";
-      liveRegion.textContent = "The live brief could not be read. A labeled local preview is available.";
+      /* the steward speaks first: his preview line now reaches the live region,
+         and the fuller failure message is what must be left standing there */
       stewardReport(FALLBACK_DATA, 1);
+      liveRegion.textContent = "The live brief could not be read. A labeled local preview is available.";
     }
   } finally {
     if (!signal.aborted) {
@@ -2142,9 +2144,9 @@ const STEWARD_POSE_ONE_READING = `l${"d".repeat(15)}`;
 const STEWARD_BAND_LINES = {
   100: "full. i cannot help you from here.",
   90: "ninety. i would clear something this week.",
-  80: "eighty percent. we should talk about downloads.",
+  80: "eighty percent used. worth a look this week.",
   70: "seventy. worth a look this month, not today.",
-  60: "sixty percent. downloads is most of the new part.",
+  60: "sixty percent used. no action needed.",
 };
 
 const STEWARD_BRIEF_KEY = "steward.lastBriefDay";
@@ -2225,7 +2227,12 @@ function stewardHideLine() {
   stewardHideTimer = setTimeout(() => { stewardLineEl.hidden = true; }, 220);
 }
 
-function stewardShowLine(line) {
+/* the line is aria-hidden decoration, but for these states it is the ONLY place
+   the observation is written — so it is mirrored into the existing live region.
+   States driven by a user action that already announces stay out of this set. */
+const STEWARD_ANNOUNCE_STATES = new Set(["briefing", "found", "watching", "full", "preview", "bored", "resting"]);
+
+function stewardShowLine(line, announce = false) {
   if (!stewardLineEl || !line) return;
   clearTimeout(stewardLineTimer);
   clearTimeout(stewardHideTimer);
@@ -2234,6 +2241,7 @@ function stewardShowLine(line) {
   stewardLineEl.hidden = false;
   void stewardLineEl.offsetWidth;
   stewardLineEl.classList.add("is-shown");
+  if (announce && liveRegion) liveRegion.textContent = line;
   stewardLineTimer = setTimeout(stewardHideLine, STEWARD_LINE_MS);
 }
 
@@ -2295,7 +2303,7 @@ function stewardSet(state, line = "") {
   /* one motion at a time: swapping data-state cancels the previous animation outright */
   stewardEnterState(state);
   if (STEWARD_SETTLE_STATES.has(state)) stewardRestState = state;
-  if (line) stewardShowLine(line);
+  if (line) stewardShowLine(line, STEWARD_ANNOUNCE_STATES.has(state));
   else stewardHideLine();
   if (STEWARD_TRANSIENT_STATES.has(state)) {
     stewardSettleTimer = setTimeout(() => {
@@ -2677,7 +2685,7 @@ function stewardVoiceLine({ disk, snapshots, categories, change }) {
   if (categories.length > 0 && categories.every((category) => numberOr(category?.deltaBytes) === 0)) {
     return "nothing moved. that is the report.";
   }
-  if (change > 5 * GIB) return `up ${stewardGb(change)} gb overnight. one folder, not many.`;
+  if (change > 5 * GIB) return `up ${stewardGb(change)} gb overnight.`;
   if (change < -5 * GIB) return `down ${stewardGb(Math.abs(change))} gb. someone was busy.`;
   return "";
 }
@@ -2700,15 +2708,23 @@ function stewardMarkBriefDay() {
 
 /* ---- the report ---- */
 
+/* only these three tokens carry a verdict; everything else — medium, high,
+   review, or a risk the collector never wrote — is not his to call reclaimable */
+const STEWARD_SAFE_RISKS = new Set(["safe", "low", "rebuildable"]);
+
 function stewardReadDisk(latest) {
   const disk = diskState(latest);
-  const reclaimable = arrayOr(latest?.reclaimable)
-    .reduce((sum, item) => sum + Math.max(0, numberOr(item?.bytes)), 0);
-  return { disk, reclaimable };
+  const items = arrayOr(latest?.reclaimable);
+  const sum = (predicate) => items
+    .filter((item) => predicate(safeToken(item?.risk, ["safe", "rebuildable", "low", "medium", "high", "review"], "review")))
+    .reduce((total, item) => total + Math.max(0, numberOr(item?.bytes)), 0);
+  const safeBytes = sum((risk) => STEWARD_SAFE_RISKS.has(risk));
+  const reviewBytes = sum((risk) => !STEWARD_SAFE_RISKS.has(risk));
+  return { disk, safeBytes, reviewBytes, reclaimable: safeBytes + reviewBytes };
 }
 
 function stewardDecide(context) {
-  const { disk, reclaimable, snapshots, categories, voice } = context;
+  const { disk, safeBytes, reviewBytes, reclaimable, snapshots, categories, voice } = context;
   /* the one-reading pose owns the grid wherever he ends up resting */
   if (snapshots.length === 1) stewardCellOverride = STEWARD_POSE_ONE_READING;
 
@@ -2717,12 +2733,17 @@ function stewardDecide(context) {
     return;
   }
   if (disk.availablePercent < 12) {
-    stewardSet("watching", voice || "we should talk about downloads.");
+    stewardSet("watching", voice || "space is running low. worth a look this week.");
     return;
   }
   if (reclaimable > 0) {
     stewardRestState = "resting";
-    stewardSet("found", voice || `${stewardGb(reclaimable)} gb reclaimable. i can wait.`);
+    /* "reclaimable" is a verdict, so only bytes he can stand behind are counted.
+       When nothing clears that bar he hands the call back instead of inflating it. */
+    const found = safeBytes > 0
+      ? `${stewardGb(safeBytes)} gb reclaimable. i can wait.`
+      : `${stewardGb(reviewBytes)} gb worth a review. your call.`;
+    stewardSet("found", voice || found);
     return;
   }
   /* empty-data poses replace the generic resting pose */
@@ -2757,7 +2778,7 @@ function stewardReport(data, fallbackCount) {
   stewardBandCrossed = false;
 
   const latest = stewardData.latest;
-  const { disk, reclaimable } = stewardReadDisk(latest);
+  const { disk, safeBytes, reviewBytes, reclaimable } = stewardReadDisk(latest);
   stewardSetFill(disk.usedPercent);
   stewardRenderShell();
 
@@ -2774,7 +2795,7 @@ function stewardReport(data, fallbackCount) {
   stewardWriteStore(STEWARD_BAND_KEY, String(disk.usedPercent));
   if (stewardBandCrossed) stewardPulseBandBar();
 
-  const context = { disk, reclaimable, snapshots, categories, voice };
+  const context = { disk, safeBytes, reviewBytes, reclaimable, snapshots, categories, voice };
 
   if (stewardBriefingActive) {
     stewardBriefingActive = false;
@@ -2786,7 +2807,7 @@ function stewardReport(data, fallbackCount) {
     /* he is the last instrument in the briefing sequence: gauge 0, tiles 90,
        movement 180, console 270, his word 360 */
     stewardSet("briefing");
-    stewardBriefLineTimer = setTimeout(() => stewardShowLine(line), STEWARD_BRIEF_LINE_MS);
+    stewardBriefLineTimer = setTimeout(() => stewardShowLine(line, true), STEWARD_BRIEF_LINE_MS);
     stewardBriefTimer = setTimeout(() => stewardDecide(context), STEWARD_BRIEF_MS);
     return;
   }

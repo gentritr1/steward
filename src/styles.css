@@ -4458,6 +4458,16 @@ p.timeline-details {
   }
 }
 
+/* a finger needs 44px; a cursor does not. The keycap keeps its compact look on
+   fine pointers and grows to a real target wherever the pointer is coarse. */
+@media (pointer: coarse) {
+  .steward-key {
+    min-height: 44px;
+    min-width: 44px;
+    padding: 3px 12px;
+  }
+}
+
 .steward-shell-trend,
 .steward-shell-delta,
 .steward-shell-empty {
