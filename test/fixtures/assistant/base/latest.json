@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-20T06:00:00.000Z",
+  "disk": {
+    "mountPoint": "/System/Volumes/Data",
+    "capacityBytes": 1099511627776,
+    "usedBytes": 884763262976,
+    "availableBytes": 214748364800,
+    "usedPercent": 80
+  },
+  "summary": {
+    "headline": "200 GB free.",
+    "body": "Fixture data. Nothing here describes a real machine."
+  },
+  "categories": [
+    { "id": "projects", "label": "Projects", "kind": "work", "bytes": 50000000000, "deltaBytes": null }
+  ],
+  "projects": [
+    {
+      "name": "secret-launch-x",
+      "bytes": 3174449152,
+      "generatedBytes": 1673019392,
+      "hasGit": true,
+      "lastActiveAt": "2026-08-19T22:11:44.470Z"
+    }
+  ],
+  "reclaimable": [
+    {
+      "id": "app-caches",
+      "label": "Application caches",
+      "bytes": 4294967296,
+      "risk": "rebuildable",
+      "rebuildCost": "Apps may sign in or download cached assets again",
+      "evidence": "Measured under ~/Library/VerySecret.",
+      "scope": "~/Library/VerySecret",
+      "reversibility": "Most contents return automatically."
+    },
+    {
+      "id": "node-modules",
+      "label": "Installed project packages",
+      "bytes": 2147483648,
+      "risk": "review",
+      "rebuildCost": "Requires a valid lockfile and package reinstall",
+      "evidence": "4 node_modules folders found.",
+      "scope": "secret-launch-x (4)",
+      "reversibility": "Reinstall from the matching lockfile."
+    },
+    {
+      "id": "xcode-archives",
+      "label": "Xcode archives",
+      "bytes": 1073741824,
+      "risk": "review",
+      "rebuildCost": "Previous release artifacts may be irreplaceable",
+      "evidence": "Archives can contain dSYMs and release builds.",
+      "scope": "~/Documents/private-notes",
+      "reversibility": "Preserve unless releases are backed up."
+    }
+  ],
+  "coverage": {
+    "scannedBytes": 376083130941,
+    "unknownBytes": 508680132035,
+    "coveragePercent": 42.5,
+    "roots": ["~/Documents/private-notes", "Projects"],
+    "exclusions": ["File contents", "Trash and restricted system locations"]
+  },
+  "trend": {
+    "state": "baseline",
+    "message": "Growth attribution unlocks after the next successful daily scan.",
+    "nextMilestone": 2
+  },
+  "automation": {
+    "name": "Morning Steward",
+    "status": "active",
+    "cadence": "daily",
+    "localTime": "09:00",
+    "timeZone": "Europe/Belgrade",
+    "mode": "read-only",
+    "deletionAllowed": false
+  },
+  "privacy": {
+    "localOnly": true,
+    "readsFileContents": false,
+    "recordsPromptBodies": false,
+    "retentionDays": 90
+  }
+}

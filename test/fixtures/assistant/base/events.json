@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "events": [
+    {
+      "occurredAt": "2026-08-19T13:18:15+02:00",
+      "type": "automation",
+      "title": "Morning Steward began its watch",
+      "summary": "A private, read-only observation runs every morning.",
+      "details": ["It never deletes, moves, uploads, or installs anything."]
+    },
+    {
+      "occurredAt": "2026-08-18T09:30:00+02:00",
+      "type": "cleanup",
+      "title": "Cleaned the wedding photos",
+      "summary": "Aunt Mira asked for the originals back, so they were kept.",
+      "reclaimedBytes": 53687091200,
+      "details": ["Free space increased.", "Files under ~/Documents/private-notes were preserved."]
+    }
+  ]
+}

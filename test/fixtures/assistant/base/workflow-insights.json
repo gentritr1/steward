@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-20T06:00:00.000Z",
+  "period": {
+    "days": 13,
+    "taskCount": 50,
+    "privacy": "Aggregated task metadata only."
+  },
+  "patterns": [
+    {
+      "label": "Translation and language",
+      "count": 8,
+      "share": 0.16,
+      "description": "Recurring work on the divorce papers and other documents."
+    }
+  ],
+  "opportunities": [
+    {
+      "title": "Long-session checkpoint",
+      "summary": "Capture decisions and the next step before a long task ends.",
+      "evidence": "A 10-task sample had a median duration near 71 minutes.",
+      "confidence": "high",
+      "timeSaved": "High reconstruction cost avoided",
+      "state": "candidate"
+    }
+  ]
+}

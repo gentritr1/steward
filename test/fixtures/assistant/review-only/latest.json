@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-20T06:00:00.000Z",
+  "disk": {
+    "mountPoint": "/System/Volumes/Data",
+    "capacityBytes": 1099511627776,
+    "usedBytes": 1011612582092,
+    "availableBytes": 87899045684,
+    "usedPercent": 92
+  },
+  "categories": [],
+  "projects": [],
+  "reclaimable": [
+    {
+      "id": "node-modules",
+      "label": "Installed project packages",
+      "bytes": 2147483648,
+      "risk": "review",
+      "scope": "secret-launch-x (4)",
+      "evidence": "4 node_modules folders found."
+    },
+    {
+      "id": "xcode-archives",
+      "label": "Xcode archives",
+      "bytes": 1073741824,
+      "risk": "review",
+      "scope": "~/Documents/private-notes",
+      "evidence": "Archives can contain dSYMs and release builds."
+    }
+  ],
+  "coverage": {
+    "scannedBytes": 100000000000,
+    "unknownBytes": 911612582092,
+    "coveragePercent": 9.884,
+    "roots": ["Projects"],
+    "exclusions": ["File contents"]
+  }
+}

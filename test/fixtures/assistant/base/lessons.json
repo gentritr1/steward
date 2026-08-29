@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "startsOn": "2026-08-01",
+  "cadence": "daily",
+  "lessons": [
+    {
+      "id": "ram-and-storage",
+      "dayOffset": 0,
+      "title": "RAM is your desk. Storage is your cabinet.",
+      "deck": "Two kinds of space, two very different jobs.",
+      "readMinutes": 4,
+      "summary": "Aunt Mira keeps her desk clear and her cabinet full; both matter.",
+      "takeaway": "RAM is space for now; storage is space for later."
+    },
+    {
+      "id": "memory-pressure-and-swap",
+      "dayOffset": 1,
+      "title": "Memory pressure",
+      "deck": "What the Mac does when the desk is full.",
+      "readMinutes": 4,
+      "summary": "Swap borrows the cabinet when the desk runs out.",
+      "takeaway": "Pressure, not free bytes, is the signal to watch."
+    },
+    {
+      "id": "files-and-bytes",
+      "dayOffset": 2,
+      "title": "Files and bytes",
+      "deck": "Why the same file reports two sizes.",
+      "readMinutes": 3,
+      "summary": "The scan of secret-launch-x showed both numbers at once.",
+      "takeaway": "Size on disk and size in bytes are different measurements."
+    },
+    {
+      "id": "caches-and-build-artifacts",
+      "dayOffset": 3,
+      "title": "Caches and build artifacts",
+      "deck": "Space that rebuilds itself.",
+      "readMinutes": 4,
+      "summary": "A cache is a bet that you will want the same thing twice.",
+      "takeaway": "Rebuildable is not the same as disposable."
+    },
+    {
+      "id": "apps-and-app-data",
+      "dayOffset": 4,
+      "title": "Apps and app data",
+      "deck": "The app is small; its data is not.",
+      "readMinutes": 3,
+      "summary": "Removing an app rarely removes what the app wrote.",
+      "takeaway": "Look for the data, not the icon."
+    },
+    {
+      "id": "apfs-purgeable-and-snapshots",
+      "dayOffset": 5,
+      "title": "Purgeable space",
+      "deck": "Space that is free, but not yet.",
+      "readMinutes": 5,
+      "summary": "Snapshots hold bytes the Finder already counts as available.",
+      "takeaway": "Two honest tools can report two different free-space numbers."
+    },
+    {
+      "id": "diagnosing-storage-growth",
+      "dayOffset": 6,
+      "title": "Diagnosing growth",
+      "deck": "Find the cause, not the biggest folder.",
+      "readMinutes": 5,
+      "summary": "Growth has a direction; size alone does not.",
+      "takeaway": "Compare two readings before blaming anything."
+    }
+  ]
+}

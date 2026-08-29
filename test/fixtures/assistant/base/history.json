@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "snapshots": [
+    {
+      "generatedAt": "2026-08-20T06:00:00.000Z",
+      "availableBytes": 214748364800,
+      "usedBytes": 884763262976,
+      "usedPercent": 80,
+      "categoryBytes": {
+        "projects": 50000000000
+      }
+    }
+  ]
+}

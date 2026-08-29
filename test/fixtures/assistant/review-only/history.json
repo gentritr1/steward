@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "snapshots": [
+    { "generatedAt": "2026-08-16T06:00:00.000Z", "availableBytes": 96000000000, "usedBytes": 1003511627776, "usedPercent": 91 },
+    { "generatedAt": "2026-08-17T06:00:00.000Z", "availableBytes": 94000000000, "usedBytes": 1005511627776, "usedPercent": 91 },
+    { "generatedAt": "2026-08-18T06:00:00.000Z", "availableBytes": 92000000000, "usedBytes": 1007511627776, "usedPercent": 92 },
+    { "generatedAt": "2026-08-19T06:00:00.000Z", "availableBytes": 90000000000, "usedBytes": 1009511627776, "usedPercent": 92 },
+    { "generatedAt": "2026-08-20T06:00:00.000Z", "availableBytes": 87899045684, "usedBytes": 1011612582092, "usedPercent": 92 }
+  ]
+}
