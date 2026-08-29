@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "events": [
+    {
+      "occurredAt": "2026-08-29T15:18:15+02:00",
+      "type": "automation",
+      "title": "Morning Steward began its watch",
+      "summary": "A private, read-only observation now runs every morning at 09:00 local time and refreshes this brief.",
+      "details": [
+        "It compares each day with the previous observation.",
+        "It never deletes, moves, uploads, or installs anything.",
+        "It raises attention only for meaningful storage loss, concentration of growth, or incomplete coverage."
+      ]
+    },
+    {
+      "occurredAt": "2026-08-29T11:30:00+02:00",
+      "type": "cleanup",
+      "title": "The machine got breathing room",
+      "summary": "Generated developer data and application caches were removed after review. Personal files, source code, current device support, and agent history were preserved.",
+      "reclaimedBytes": 53901839565,
+      "details": [
+        "Free space increased from 8.8 GB to 59 GB.",
+        "Disk utilization fell from 98% to 87%.",
+        "Desktop project storage fell from 35 GB to 14 GB.",
+        "Unity libraries, Android builds, Gradle/npm caches, Xcode Derived Data, and older Xcode support were cleared."
+      ]
+    }
+  ]
+}

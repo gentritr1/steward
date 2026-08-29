@@ -1,0 +1,240 @@
+{
+  "schemaVersion": 1,
+  "startsOn": "2026-08-29",
+  "cadence": "daily",
+  "lessons": [
+    {
+      "id": "ram-and-storage",
+      "dayOffset": 0,
+      "title": "RAM is your desk. Storage is your cabinet.",
+      "deck": "Two kinds of space, two very different jobs.",
+      "readMinutes": 4,
+      "summary": "RAM holds what your Mac is actively working with; storage keeps things after the work is done. A crowded desk can slow you down even when the filing cabinet still has room, and an overfilled cabinet can leave the desk without a safe overflow area.",
+      "concepts": [
+        {
+          "term": "RAM",
+          "analogy": "Your desk",
+          "definition": "Fast, temporary memory used by apps and the system while they are running.",
+          "example": "Open browser tabs, a design canvas, and the current video timeline all need room in RAM."
+        },
+        {
+          "term": "Storage",
+          "analogy": "Your filing cabinet",
+          "definition": "Long-term space on the SSD where apps, documents, photos, and system files remain.",
+          "example": "A project stays on the SSD after you close its app or restart the Mac."
+        },
+        {
+          "term": "Working set",
+          "analogy": "Everything spread across the desk right now",
+          "definition": "The parts of open apps and files that the Mac needs to reach quickly at this moment.",
+          "example": "Switching from browsing to editing video usually makes the working set much larger."
+        }
+      ],
+      "misconception": "Adding more storage does not add more RAM. Free SSD space can help the Mac use swap safely, but RAM and storage remain separate resources.",
+      "takeaway": "RAM is space for now; storage is space for later. Check which one is under pressure before deciding what to close or clean.",
+      "interaction": {
+        "kind": "workbench-simulation",
+        "title": "Set your workbench",
+        "prompt": "Choose a workload and watch the active desk fill up.",
+        "unit": "working-set points",
+        "presets": [
+          {
+            "id": "browser",
+            "label": "Browser",
+            "value": 4
+          },
+          {
+            "id": "design",
+            "label": "Design",
+            "value": 7
+          },
+          {
+            "id": "video",
+            "label": "Video",
+            "value": 11
+          }
+        ]
+      }
+    },
+    {
+      "id": "memory-pressure-and-swap",
+      "dayOffset": 1,
+      "title": "When the desk gets crowded",
+      "deck": "Memory pressure tells the fuller story; swap is the overflow plan.",
+      "readMinutes": 4,
+      "summary": "A low free-RAM number is not automatically bad. macOS intentionally uses available memory to work faster. Memory pressure combines several signals to show whether the system is coping comfortably or spending extra effort making room.",
+      "concepts": [
+        {
+          "term": "Memory pressure",
+          "analogy": "A traffic light for the desk",
+          "definition": "A combined measure of how easily the Mac can meet current memory demand.",
+          "example": "Green means the system is coping; sustained yellow or red suggests the active workload is too heavy."
+        },
+        {
+          "term": "Swap",
+          "analogy": "An overflow box beside the desk",
+          "definition": "SSD space temporarily used when active work cannot fit comfortably in RAM.",
+          "example": "A background app may be moved to swap while a large edit stays ready in faster RAM."
+        },
+        {
+          "term": "Memory compression",
+          "analogy": "Vacuum-packing papers before using another box",
+          "definition": "A technique that packs inactive memory more tightly so more can remain in RAM.",
+          "example": "The Mac may compress background app data before it begins swapping heavily."
+        }
+      ],
+      "misconception": "Completely empty RAM is not the goal. The system uses spare RAM for useful work and cached data, then reclaims it when an app needs space.",
+      "takeaway": "Watch sustained memory pressure and heavy swap—not free RAM by itself—when judging whether memory is the bottleneck."
+    },
+    {
+      "id": "files-and-bytes",
+      "dayOffset": 2,
+      "title": "How a file becomes a number",
+      "deck": "Bytes measure content, while units and metadata explain why totals can differ.",
+      "readMinutes": 4,
+      "summary": "Every file is stored as bytes, but the number you see depends on how those bytes are counted and presented. Learning the units makes storage reports easier to compare without treating a harmless rounding difference as a mystery.",
+      "concepts": [
+        {
+          "term": "Byte",
+          "analogy": "A tiny building block",
+          "definition": "A basic unit of digital storage, made from eight bits.",
+          "example": "A short text note needs thousands of bytes; a high-quality video may need billions."
+        },
+        {
+          "term": "GB and GiB",
+          "analogy": "Two measuring cups with slightly different marks",
+          "definition": "A gigabyte uses powers of 1,000; a gibibyte uses powers of 1,024.",
+          "example": "The same data can show a smaller number in GiB than in GB even though no bytes disappeared."
+        },
+        {
+          "term": "Metadata",
+          "analogy": "A luggage tag attached to the suitcase",
+          "definition": "Information about a file, such as its name, dates, permissions, and location.",
+          "example": "Two photos can contain similar pixels but have different dates, labels, and editing history."
+        }
+      ],
+      "misconception": "A storage tool showing a different total is not necessarily wrong; it may use different units, rounding, permissions, or rules for shared data.",
+      "takeaway": "Compare like with like: use the same units and the same scanning method when looking for real change."
+    },
+    {
+      "id": "caches-and-build-artifacts",
+      "dayOffset": 3,
+      "title": "The useful mess behind fast work",
+      "deck": "Caches and build artifacts save time, but their copies can quietly accumulate.",
+      "readMinutes": 5,
+      "summary": "Many large folders are not personal documents. Apps and developer tools create local shortcuts and generated outputs so work opens or builds faster. These files may be rebuildable, but removing them still has a cost: the next launch or build may be slower and may need a network connection.",
+      "concepts": [
+        {
+          "term": "Cache",
+          "analogy": "A shortcut drawer",
+          "definition": "A stored copy of data that an app expects to use again soon.",
+          "example": "A browser keeps image copies so a familiar page can load faster next time."
+        },
+        {
+          "term": "Build artifact",
+          "analogy": "The cut pieces left beside a workshop project",
+          "definition": "Generated output created while turning source files into a runnable app or other result.",
+          "example": "Compiled objects, simulator builds, and preview outputs can be regenerated from source."
+        },
+        {
+          "term": "Dependency copy",
+          "analogy": "Each workshop keeping its own toolbox",
+          "definition": "A local copy of third-party code or assets that a project needs to build.",
+          "example": "Several projects may each keep their own package folder even when versions overlap."
+        }
+      ],
+      "misconception": "Rebuildable does not mean worthless. Clearing a cache during active work can trade storage space for waiting, downloads, or a temporarily broken offline workflow.",
+      "takeaway": "Treat generated data as reviewable, not disposable: confirm its owner, rebuild path, and timing before clearing it."
+    },
+    {
+      "id": "apps-and-app-data",
+      "dayOffset": 4,
+      "title": "The app is only the front door",
+      "deck": "An application, its settings, and your content often live in separate places.",
+      "readMinutes": 4,
+      "summary": "Dragging an app into the Trash removes its main application bundle, but that may be only part of its footprint. Preferences, downloads, libraries, plug-ins, and project data can live elsewhere so they survive updates or reinstalls.",
+      "concepts": [
+        {
+          "term": "Application bundle",
+          "analogy": "The appliance itself",
+          "definition": "The packaged program that appears as one app in Finder.",
+          "example": "A creative app bundle contains its executable code, icons, and built-in resources."
+        },
+        {
+          "term": "Application Support",
+          "analogy": "The appliance's supply cupboard",
+          "definition": "Data an app keeps outside its bundle to support features and future launches.",
+          "example": "Downloaded models, templates, plug-ins, or content indexes may live there."
+        },
+        {
+          "term": "App container",
+          "analogy": "A labeled room with controlled doors",
+          "definition": "A sandboxed area where an app stores its settings, caches, and local files.",
+          "example": "Two apps can keep similarly named files separate because each has its own container."
+        }
+      ],
+      "misconception": "Deleting an app does not guarantee that every related file is removed, and deleting every related folder can also remove work you meant to keep.",
+      "takeaway": "Before removing an app, separate the program, its rebuildable support files, and your irreplaceable content."
+    },
+    {
+      "id": "apfs-purgeable-and-snapshots",
+      "dayOffset": 5,
+      "title": "Why free space can look slippery",
+      "deck": "APFS can share capacity, reserve recoverable space, and preserve moments in time.",
+      "readMinutes": 5,
+      "summary": "Modern Macs use APFS, which manages storage more flexibly than a row of fixed boxes. Several volumes can share one container, some data can be reclaimed when needed, and snapshots can preserve earlier filesystem states. That flexibility is useful, but it makes one simple free-space number incomplete.",
+      "concepts": [
+        {
+          "term": "APFS container",
+          "analogy": "A building whose rooms share the same land",
+          "definition": "A shared pool of disk capacity used by one or more APFS volumes.",
+          "example": "System and Data volumes can report separately while drawing space from the same container."
+        },
+        {
+          "term": "Purgeable space",
+          "analogy": "A guest room that can be cleared when family arrives",
+          "definition": "Locally stored data the system believes it can remove or download again when space is needed.",
+          "example": "Some cached or cloud-backed files may count as used now but remain recoverable later."
+        },
+        {
+          "term": "Snapshot",
+          "analogy": "A restore point in a time machine",
+          "definition": "A read-only record of the filesystem state at a particular moment.",
+          "example": "A local backup snapshot can help recover an earlier file version until the system releases it."
+        }
+      ],
+      "misconception": "Two free-space readings that differ do not automatically mean disk corruption; they may count shared, purgeable, or snapshot data differently.",
+      "takeaway": "Use free space as a trend, then inspect purgeable data and snapshots when the visible folders do not explain the total."
+    },
+    {
+      "id": "diagnosing-storage-growth",
+      "dayOffset": 6,
+      "title": "Find what changed, not only what is large",
+      "deck": "A baseline and a repeatable scan turn storage cleanup into diagnosis.",
+      "readMinutes": 5,
+      "summary": "The largest folder today may have been large for years. To explain a sudden drop in free space, compare measurements taken the same way over time, then follow the categories with the biggest increase. This turns a vague feeling into a testable story.",
+      "concepts": [
+        {
+          "term": "Baseline",
+          "analogy": "The first mark on a measuring tape",
+          "definition": "A trusted starting measurement used for later comparisons.",
+          "example": "Record available space each morning before asking which category grew."
+        },
+        {
+          "term": "Delta",
+          "analogy": "The distance between two marks",
+          "definition": "The amount a measurement changed between snapshots.",
+          "example": "If projects rose by 6 GB while free space fell by 7 GB, they are a strong lead—not yet proof."
+        },
+        {
+          "term": "Attribution coverage",
+          "analogy": "How much of the map has street names",
+          "definition": "The share of total change that a scan can explain with measured categories.",
+          "example": "Low coverage means the report should say 'unknown' instead of guessing at protected or unscanned areas."
+        }
+      ],
+      "misconception": "The biggest folder is not necessarily the cause of today's storage loss. Size answers 'what is large'; change answers 'what grew.'",
+      "takeaway": "Measure consistently, compare deltas, and keep uncertainty visible. Diagnosis comes before cleanup."
+    }
+  ]
+}

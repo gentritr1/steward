@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-29T12:00:00+02:00",
+  "period": {
+    "days": 13,
+    "taskCount": 50,
+    "privacy": "Aggregated titles and task metadata only; prompt bodies were not retained."
+  },
+  "patterns": [
+    {
+      "label": "Research and briefing",
+      "count": 18,
+      "share": 0.36,
+      "description": "Controls, risk, case analysis, philosophy, and structured learning work recur most often."
+    },
+    {
+      "label": "Product, game, and interface work",
+      "count": 12,
+      "share": 0.24,
+      "description": "Design implementation, visual review, iteration, and project QA form the strongest build pattern."
+    },
+    {
+      "label": "Translation and language",
+      "count": 8,
+      "share": 0.16,
+      "description": "Repeated language tasks suggest reusable tone, audience, and terminology preferences."
+    },
+    {
+      "label": "Technical and app help",
+      "count": 5,
+      "share": 0.1,
+      "description": "Short troubleshooting and setup requests benefit from a trusted diagnostic checklist."
+    },
+    {
+      "label": "Health explainers",
+      "count": 4,
+      "share": 0.08,
+      "description": "Recurring explanatory work benefits from a consistent evidence and uncertainty format."
+    },
+    {
+      "label": "Storage and desktop hygiene",
+      "count": 2,
+      "share": 0.04,
+      "description": "The newest pattern is operational maintenance—the first automation Steward now owns."
+    }
+  ],
+  "opportunities": [
+    {
+      "title": "Long-session checkpoint",
+      "summary": "Capture decisions, changed files, validations, open risks, and the next step before a long agent task ends.",
+      "evidence": "A 10-task Codex sample had a median duration near 71 minutes and frequent multi-turn handoffs.",
+      "confidence": "high",
+      "timeSaved": "High reconstruction cost avoided",
+      "state": "candidate"
+    },
+    {
+      "title": "Project observatory",
+      "summary": "Watch generated size, backup status, stale prototypes, and reproducible cleanup space across saved projects.",
+      "evidence": "31 saved local projects were found; 23 are not Git repositories.",
+      "confidence": "high",
+      "timeSaved": "Weekly review reduced to one brief",
+      "state": "candidate"
+    },
+    {
+      "title": "Interface polish circuit",
+      "summary": "Turn screenshots, responsive checks, accessibility checks, builds, and visual review into one repeatable finish pass.",
+      "evidence": "12 recent tasks centered on product, game, UI, or design work.",
+      "confidence": "high",
+      "timeSaved": "Repeatable QA instead of manual reconstruction",
+      "state": "candidate"
+    },
+    {
+      "title": "Research brief factory",
+      "summary": "Reuse a citation, glossary, argument-map, and action-summary structure for recurring study and analysis work.",
+      "evidence": "18 recent tasks involved research, briefs, structured learning, or case analysis.",
+      "confidence": "high",
+      "timeSaved": "Common scaffolding prepared automatically",
+      "state": "candidate"
+    },
+    {
+      "title": "Translation desk",
+      "summary": "Remember preferred languages, tone, terminology, and output shape without storing sensitive source text.",
+      "evidence": "8 recent tasks involved translation or language work.",
+      "confidence": "medium",
+      "timeSaved": "Fewer repeated tone and terminology corrections",
+      "state": "candidate"
+    }
+  ]
+}

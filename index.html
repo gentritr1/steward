@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Steward is a private daily brief for storage changes and repeatable work on your Mac."
+    />
+    <meta name="theme-color" content="white" />
+    <title>Steward — Daily brief</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to the daily brief</a>
+
+    <header class="app-header">
+      <div class="masthead">
+        <a class="brand" href="#today" aria-label="Steward, daily brief home">
+          <span class="brand-mark" aria-hidden="true">S</span>
+          <span class="brand-copy">
+            <span class="brand-name">Steward</span>
+            <span class="brand-edition">Daily brief</span>
+          </span>
+        </a>
+
+        <nav class="primary-nav" aria-label="Brief sections">
+          <a href="#today" data-nav-link aria-current="page">Today</a>
+          <a href="#storage" data-nav-link>Storage Story</a>
+          <a href="#learn" data-nav-link>Learn</a>
+          <a href="#routines" data-nav-link>Routines</a>
+          <a href="#timeline" data-nav-link>Timeline</a>
+          <a href="#trust" data-nav-link>Trust &amp; Scope</a>
+        </nav>
+
+        <div class="header-actions">
+          <div class="scan-state" id="data-freshness" aria-live="polite">
+            <span class="status-dot" aria-hidden="true"></span>
+            <span>Preparing brief</span>
+          </div>
+          <button class="button button-secondary refresh-button" id="refresh-button" type="button" aria-label="Refresh local data view">
+            <svg aria-hidden="true" viewBox="0 0 20 20" width="16" height="16">
+              <path d="M15.4 6.2A6.5 6.5 0 1 0 16.5 10" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+              <path d="M12.7 5.9h3.1V2.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            <span>Refresh</span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <div class="sr-only" id="live-region" aria-live="polite"></div>
+
+    <main id="main-content" tabindex="-1">
+      <div id="app" aria-busy="true">
+        <section class="loading-brief" aria-label="Preparing your daily brief">
+          <div class="loading-line loading-line-short"></div>
+          <div class="loading-line loading-line-title"></div>
+          <div class="loading-line loading-line-copy"></div>
+          <div class="loading-columns">
+            <div class="loading-block"></div>
+            <div class="loading-block loading-block-small"></div>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <footer class="app-footer">
+      <p><strong>Steward</strong> observes first. Cleanup always waits for you.</p>
+      <a href="#trust">See privacy and coverage</a>
+    </footer>
+
+    <noscript>
+      <div class="noscript-message">
+        Steward needs JavaScript to turn its local scan files into a daily brief.
+      </div>
+    </noscript>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

@@ -1,0 +1,13 @@
+{
+  "name": "steward-local",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "collect": "node scripts/collect-storage.mjs",
+    "dev": "node scripts/dev-server.mjs",
+    "build": "node scripts/build.mjs",
+    "validate": "node scripts/validate-data.mjs",
+    "test": "npm run validate && npm run build"
+  }
+}
