@@ -84,27 +84,38 @@
         <div class="steward-shell-inner">
           <!-- two panels, one at a time. Switching only flips `hidden`, so the
                conversation log below is the same node for the whole session. -->
-          <div class="steward-tabs" role="tablist" aria-label="Steward panels" data-steward-tabs>
+          <div class="steward-tabrow">
+            <div class="steward-tabs" role="tablist" aria-label="Steward panels" data-steward-tabs>
+              <button
+                class="steward-tab"
+                type="button"
+                role="tab"
+                id="steward-tab-ask"
+                aria-controls="steward-panel-ask"
+                aria-selected="true"
+                tabindex="0"
+                data-steward-tab="ask"
+              >ASK</button>
+              <button
+                class="steward-tab"
+                type="button"
+                role="tab"
+                id="steward-tab-reclaim"
+                aria-controls="steward-panel-reclaim"
+                aria-selected="false"
+                tabindex="-1"
+                data-steward-tab="reclaim"
+              >RECLAIM</button>
+            </div>
+            <!-- tier 4 · the door to the cold console. Hidden below 700px: the
+                 rail never collapses, so the console is simply not available
+                 at a width that cannot hold it. -->
             <button
-              class="steward-tab"
+              class="steward-key steward-expand"
               type="button"
-              role="tab"
-              id="steward-tab-ask"
-              aria-controls="steward-panel-ask"
-              aria-selected="true"
-              tabindex="0"
-              data-steward-tab="ask"
-            >ASK</button>
-            <button
-              class="steward-tab"
-              type="button"
-              role="tab"
-              id="steward-tab-reclaim"
-              aria-controls="steward-panel-reclaim"
-              aria-selected="false"
-              tabindex="-1"
-              data-steward-tab="reclaim"
-            >RECLAIM</button>
+              data-console-open
+              aria-label="Expand into the steward console"
+            ><span>EXPAND</span></button>
           </div>
 
           <div
@@ -193,6 +204,88 @@
           </span>
           <span class="steward-z" aria-hidden="true">z</span>
         </button>
+      </div>
+    </div>
+
+    <!-- tier 4 · the cold console (kit "Terminal Spaces v2", phase 1).
+         A full-viewport surface in the deck's own material. It hides the page
+         rather than destroying it: the dashboard is still mounted underneath,
+         and `esc` hands the page straight back. -->
+    <div
+      class="cold-console"
+      id="cold-console"
+      data-console
+      role="dialog"
+      aria-modal="true"
+      aria-label="Steward console"
+      data-phase="idle"
+      hidden
+      inert
+    >
+      <header class="cc-head">
+        <p class="cc-title" data-cc-title>steward console</p>
+        <div class="cc-scan" data-cc-scan aria-hidden="true"><i></i></div>
+        <p class="cc-leave" aria-hidden="true">esc to leave</p>
+      </header>
+
+      <div class="cc-body">
+        <!-- 186px, fixed. The kit is explicit: the rail never collapses — if
+             the console is too narrow for it, the console is not available. -->
+        <aside class="cc-rail" data-cc-rail aria-label="Console rail">
+          <section class="cc-rail-block" data-cc-watching>
+            <p class="cc-rail-head">watching</p>
+            <div data-cc-watch-list></div>
+          </section>
+          <section class="cc-rail-block" data-cc-waiting>
+            <p class="cc-rail-head">
+              <span>waiting</span>
+              <span class="cc-rail-count" data-cc-waiting-count></span>
+            </p>
+            <div data-cc-waiting-list></div>
+          </section>
+          <div class="cc-him">
+            <span class="cc-face" data-cc-face data-mood="calm" aria-hidden="true">
+              <span class="cc-eye"></span>
+              <span class="cc-eye"></span>
+              <span class="cc-mouth"></span>
+            </span>
+            <span class="cc-mood" data-cc-mood aria-hidden="true">calm</span>
+          </div>
+        </aside>
+
+        <div class="cc-main">
+          <div class="cc-log" data-cc-log tabindex="-1"></div>
+          <!-- the consent panel is not rebuilt here: the shell's own node is
+               moved into this slot while the console is open, so the words,
+               the packet preview and the storage keys are the same ones. -->
+          <div class="cc-consent" data-cc-consent></div>
+          <div class="cc-palette" data-cc-palette role="listbox" aria-label="Command palette" hidden></div>
+          <form class="cc-prompt" data-cc-prompt novalidate>
+            <span class="cc-prompt-mark" aria-hidden="true">▸</span>
+            <span class="cc-field">
+              <label class="sr-only" for="cc-input">Console command</label>
+              <input
+                class="cc-input"
+                id="cc-input"
+                data-cc-input
+                type="text"
+                maxlength="500"
+                autocomplete="off"
+                autocapitalize="off"
+                autocorrect="off"
+                spellcheck="false"
+                aria-autocomplete="list"
+                aria-expanded="false"
+              />
+              <span class="cc-ghost" data-cc-ghost aria-hidden="true"></span>
+              <span class="cc-caret" data-cc-prompt-caret aria-hidden="true"></span>
+            </span>
+          </form>
+        </div>
+
+        <!-- phase 2 · the evidence spine. Collapsed to its wordmark and inert
+             until /why, /find and /back exist to fill it. -->
+        <div class="cc-spine" aria-hidden="true"><span>spine · phase 2</span></div>
       </div>
     </div>
 

@@ -5854,3 +5854,782 @@ p.timeline-details {
     transform: none !important;
   }
 }
+
+/* ---------- Steward · the cold console (kit "Terminal Spaces v2" · phase 1) ----------
+
+   A full-viewport surface in the deck's own material. Three columns and one
+   rule: the rail never collapses. Below the width that holds it the console is
+   not offered at all, which is why the door itself is hidden rather than the
+   rail being folded away.
+
+   The amber budget for this whole surface is the rail — the watch dot that has
+   grown, and the count of readouts nobody has looked at yet. Nothing else in
+   here is allowed to be amber. */
+
+:root {
+  /* the one typewriter rate, in characters per second. JS reads this value, so
+     the speed is tunable from the stylesheet without touching the module. */
+  --cc-cps: 38;
+  --cc-rail: 186px;
+  --cc-spine: 30px;
+}
+
+/* the door · it rides beside the shell's two tabs */
+.steward-tabrow {
+  display: flex;
+  flex: none;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.steward-tabrow .steward-tabs {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.steward-expand {
+  flex: none;
+  align-self: center;
+  height: 24px;
+  padding: 0 9px;
+  border-color: var(--slate);
+}
+
+.steward-expand[hidden] {
+  display: none;
+}
+
+/* the consent gate takes the whole shell column, and the door goes with the
+   tabs it stands beside */
+.steward-shell-inner.is-consenting .steward-tabrow {
+  display: none;
+}
+
+/* ---- the overlay ---- */
+
+html.has-console,
+html.has-console body {
+  overflow: hidden;
+}
+
+.cold-console {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  background: var(--deck);
+  color: var(--text);
+  font-family: var(--font-mono);
+}
+
+.cold-console[hidden] {
+  display: none;
+}
+
+/* ---- the header ----
+   name · mood · the reading's own clock · the engine. The scan bar between it
+   and `esc to leave` runs while a command runs and stops on the first
+   character revealed, not the last. */
+
+.cc-head {
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(60px, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--well);
+}
+
+.cc-title {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: lowercase;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cc-scan {
+  position: relative;
+  height: 2px;
+  overflow: hidden;
+  background: color-mix(in oklch, var(--rule) 60%, transparent);
+}
+
+.cc-scan i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 24%;
+  background: var(--signal);
+  opacity: 0;
+}
+
+.cc-scan.is-running i {
+  opacity: 0.85;
+  animation: cc-sweep 900ms linear infinite;
+}
+
+/* reduced motion keeps the bar as a reading, parked at its 24% */
+.cc-scan.is-parked i {
+  opacity: 0.85;
+}
+
+/* the bar is 24% of the track, so one lap is 124% of the track — 516.7% of
+   itself. Written as a ratio so the two numbers can never drift apart. */
+@keyframes cc-sweep {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(416.7%); }
+}
+
+.cc-leave {
+  margin: 0;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--slate);
+  white-space: nowrap;
+}
+
+/* ---- the three columns ---- */
+
+.cc-body {
+  display: grid;
+  grid-template-columns: var(--cc-rail) minmax(0, 1fr) var(--cc-spine);
+  min-height: 0;
+}
+
+/* ---- the rail ---- */
+
+.cc-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  width: var(--cc-rail);
+  min-width: 0;
+  padding: 16px 14px;
+  border-right: 1px solid var(--rule);
+  background: var(--well);
+  overflow-y: auto;
+}
+
+.cc-rail-block {
+  display: block;
+}
+
+.cc-rail-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--slate);
+}
+
+/* the one amber in the console, with the watch dot: how many readouts are
+   still unseen. Once each has been opened the word is `clear`, in slate. */
+.cc-rail-count[data-state="unseen"] {
+  color: var(--amber);
+}
+
+.cc-rail-count[data-state="clear"] {
+  color: var(--slate);
+}
+
+.cc-rail-empty {
+  margin: 0;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: color-mix(in oklch, var(--slate) 46%, transparent);
+}
+
+.cc-watch {
+  display: grid;
+  grid-template-columns: 5px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 6px;
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+.cc-watch-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cc-watch-share {
+  font-size: 10px;
+  color: var(--slate);
+}
+
+.cc-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--signal);
+}
+
+.cc-watch[data-state="slate"] .cc-dot {
+  background: var(--slate);
+}
+
+.cc-watch[data-state="amber"] .cc-dot {
+  background: var(--amber);
+  animation: cc-glow 2.4s ease-in-out infinite;
+}
+
+@keyframes cc-glow {
+  0%, 100% { box-shadow: 0 0 0 var(--amber); }
+  50% { box-shadow: 0 0 7px var(--amber); }
+}
+
+.cc-wait {
+  display: block;
+  width: 100%;
+  margin: 0 0 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.4;
+  text-align: left;
+  color: var(--amber);
+  transition: color var(--d-fast) var(--ease-move);
+}
+
+.cc-wait[data-seen="true"] {
+  color: var(--slate);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .cc-wait:hover {
+    color: var(--text);
+  }
+}
+
+/* ---- his block · 46px, in the rail's bottom corner ---- */
+
+.cc-him {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+/* the same eye maths the badge uses, at 46px: the tokens are unitless and --u
+   carries the scale, so nothing here is a second drawing of the same face. */
+.cc-face {
+  position: relative;
+  display: block;
+  width: 46px;
+  height: 46px;
+  overflow: hidden;
+  background: var(--well);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-sm);
+  box-shadow: inset 0 1px 0 var(--panel-sheen);
+  --u: 0.958px;
+  --eye-w: 9;
+  --eye-h: 13;
+  --eye-gap: 7;
+  --eye-o: 1;
+  --eye-color: var(--signal);
+  --mouth-h: 0px;
+  --mouth-w: 50%;
+  --mouth-o: 0;
+}
+
+.cc-eye {
+  position: absolute;
+  top: calc(32% + 5px);
+  width: calc(var(--eye-w) * var(--u));
+  height: calc(var(--eye-h) * var(--u));
+  margin-top: calc(var(--eye-h) * var(--u) / -2);
+  border-radius: 2px;
+  color: var(--eye-color);
+  background: currentColor;
+  opacity: var(--eye-o);
+  box-shadow: 0 0 8px currentColor;
+  transition: height 180ms var(--ease-entrance), width 180ms var(--ease-entrance);
+}
+
+.cc-eye:first-child {
+  left: calc(50% - var(--eye-gap) * var(--u) / 2 - var(--eye-w) * var(--u));
+}
+
+.cc-eye:nth-child(2) {
+  left: calc(50% + var(--eye-gap) * var(--u) / 2);
+}
+
+.cc-mouth {
+  position: absolute;
+  left: calc(50% - var(--mouth-w) / 2);
+  top: 72%;
+  width: var(--mouth-w);
+  height: var(--mouth-h);
+  transform: translateY(-50%);
+  border-radius: 1px;
+  background: var(--void);
+  border: 1px solid var(--rule);
+  opacity: var(--mouth-o);
+  transition: height 180ms var(--ease-entrance), opacity 180ms var(--ease-entrance);
+}
+
+.cc-face[data-mood="listening"] {
+  --eye-h: 14;
+  --mouth-h: 2px;
+  --mouth-o: 1;
+}
+
+.cc-face[data-mood="scanning"] {
+  --eye-w: 5;
+  --mouth-h: 2px;
+  --mouth-o: 1;
+}
+
+.cc-face[data-mood="watchful"] {
+  --eye-h: 7;
+  --mouth-h: 2px;
+  --mouth-w: 12px;
+  --mouth-o: 1;
+}
+
+.cc-face[data-mood="pleased"] {
+  --eye-h: 12;
+  --mouth-h: 6px;
+  --mouth-o: 1;
+}
+
+.cc-mood {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: var(--slate);
+}
+
+/* ---- the middle column ---- */
+
+.cc-main {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 16px 20px 14px;
+}
+
+.cc-log {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.cc-log:focus {
+  outline: none;
+}
+
+.cc-system {
+  margin: 0 0 4px;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  color: var(--slate);
+}
+
+.cc-turn {
+  margin: 0 0 16px;
+}
+
+.cc-turn-you {
+  margin: 0;
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  align-items: baseline;
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  color: color-mix(in oklch, var(--slate) 62%, var(--text));
+}
+
+.cc-turn-label {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: var(--slate);
+}
+
+.cc-turn-reply {
+  margin: 4px 0 0;
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  align-items: baseline;
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  color: var(--text);
+}
+
+.cc-turn-extra {
+  margin: 6px 0 0 20px;
+}
+
+.cc-turn-extra .cc-hold {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 24px;
+  min-height: 0;
+  padding: 0 12px;
+  border-color: var(--slate);
+}
+
+.cc-receipt {
+  margin: 3px 0 0 20px;
+  font-size: 10px;
+  line-height: 1.4;
+  letter-spacing: 0.06em;
+  color: var(--slate);
+}
+
+/* ---- the caret · 7×15, at the reveal head, back to the prompt when done ---- */
+
+.cc-caret {
+  display: inline-block;
+  width: 7px;
+  height: 15px;
+  background: var(--signal);
+  vertical-align: text-bottom;
+  animation: cc-blink 1.1s steps(1, end) infinite;
+}
+
+@keyframes cc-blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
+/* ---- the instruments ----
+   Nothing here moves until the sentence and its receipt are both standing;
+   then the cells light 18ms apart, exactly as the deck's bars do. */
+
+.cc-inst {
+  margin: 10px 0 0 20px;
+  max-width: 420px;
+}
+
+.cc-inst-label {
+  margin: 6px 0 0;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--slate);
+}
+
+.cc-inst .seg span {
+  opacity: 0;
+  transform: scaleY(0.3);
+}
+
+.cc-inst.is-lit .seg span {
+  opacity: var(--lit-dim);
+  transform: scaleY(1);
+  transition:
+    opacity 220ms cubic-bezier(0.2, 0.9, 0.2, 1) calc(var(--k, 0) * var(--sd, 18ms)),
+    transform 220ms cubic-bezier(0.2, 0.9, 0.2, 1) calc(var(--k, 0) * var(--sd, 18ms));
+}
+
+.cc-inst.is-lit .seg span.on { opacity: var(--lit); }
+.cc-inst.is-lit .seg span.is-last { opacity: var(--lit-hi); }
+
+/* the scope · a fixed twelve-slot grid, one column per reading. Two readings
+   draw two columns and leave ten empty — the honest shape of a short history. */
+.cc-scope {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  align-items: end;
+  gap: 3px;
+  height: 44px;
+}
+
+.cc-scope-col {
+  height: calc(var(--h, 6) * 1%);
+  border-radius: 1px;
+  background: var(--signal);
+  opacity: 0;
+  transform: scaleY(0.3);
+  transform-origin: 50% 100%;
+}
+
+.cc-scope-col.is-now {
+  background: var(--plasma);
+}
+
+.cc-inst.is-lit .cc-scope-col {
+  opacity: var(--lit);
+  transform: scaleY(1);
+  transition:
+    opacity 220ms cubic-bezier(0.2, 0.9, 0.2, 1) calc(var(--k, 0) * var(--sd, 18ms)),
+    transform 220ms cubic-bezier(0.2, 0.9, 0.2, 1) calc(var(--k, 0) * var(--sd, 18ms));
+}
+
+.cc-inst.is-lit .cc-scope-col.is-now {
+  opacity: var(--lit-hi);
+}
+
+/* the block table · name, size, delta */
+.cc-table {
+  margin-top: 12px;
+}
+
+.cc-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 74px 58px;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: 11px;
+  color: var(--text-2);
+  border-bottom: 1px solid color-mix(in oklch, var(--rule) 55%, transparent);
+  opacity: 0;
+}
+
+.cc-row-mode {
+  grid-template-columns: minmax(0, 1fr) 132px;
+}
+
+.cc-inst.is-lit .cc-row,
+.cc-inst.is-lit .cc-more {
+  opacity: 1;
+  transition: opacity 220ms cubic-bezier(0.2, 0.9, 0.2, 1) calc(var(--k, 0) * var(--sd, 18ms));
+}
+
+.cc-cell-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cc-cell-size,
+.cc-cell-note {
+  font-size: 10px;
+  color: var(--slate);
+  text-align: right;
+}
+
+.cc-cell-note {
+  text-align: left;
+}
+
+.cc-cell-delta {
+  font-size: 10px;
+  text-align: right;
+  color: var(--slate);
+}
+
+.cc-cell-delta[data-dir="up"] {
+  color: var(--signal);
+}
+
+.cc-cell-delta[data-dir="down"] {
+  color: var(--plasma);
+}
+
+/* phase 2 · this line is where /find will pick up. Until then it is dim and
+   inert, and it never draws itself as something you can press. */
+.cc-more {
+  margin: 6px 0 0;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: color-mix(in oklch, var(--slate) 55%, transparent);
+  opacity: 0;
+}
+
+/* ---- the palette ---- */
+
+.cc-palette {
+  flex: none;
+  max-height: 190px;
+  margin-bottom: 8px;
+  overflow-y: auto;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-sm);
+  background: var(--well);
+}
+
+.cc-palette[hidden] {
+  display: none;
+}
+
+.cc-pal-row {
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1fr);
+  gap: 12px;
+  width: 100%;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-align: left;
+  color: var(--text-2);
+}
+
+.cc-pal-row[aria-selected="true"] {
+  background: var(--signal-dim);
+  color: var(--text);
+}
+
+.cc-pal-note {
+  color: var(--slate);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .cc-pal-row:hover {
+    color: var(--text);
+  }
+}
+
+/* ---- the prompt ---- */
+
+.cc-prompt {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--rule);
+}
+
+.cc-prompt-mark {
+  flex: none;
+  font-size: 12px;
+  color: var(--signal);
+}
+
+.cc-field {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 18px;
+}
+
+.cc-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--text);
+  /* the 7×15 block below is the caret; two carets in one field is one too many */
+  caret-color: transparent;
+}
+
+.cc-input:focus {
+  outline: none;
+}
+
+/* the ghost sits ahead of the caret at 0.38 — a suggestion, never a value */
+.cc-ghost {
+  position: absolute;
+  top: 0;
+  pointer-events: none;
+  left: calc(var(--n, 0) * 1ch);
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--text);
+  opacity: 0.38;
+  white-space: pre;
+}
+
+.cc-field > .cc-caret {
+  position: absolute;
+  top: 2px;
+  left: calc(var(--n, 0) * 1ch);
+  vertical-align: baseline;
+  pointer-events: none;
+}
+
+.cc-field > .cc-caret[hidden],
+.cc-field > .cc-caret.is-off {
+  display: none;
+}
+
+/* ---- the spine · phase 2 ---- */
+
+.cc-spine {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--cc-spine);
+  border-left: 1px solid var(--rule);
+  background: var(--well);
+  pointer-events: none;
+}
+
+.cc-spine span {
+  writing-mode: vertical-rl;
+  font-size: 9px;
+  letter-spacing: 0.22em;
+  text-transform: lowercase;
+  color: color-mix(in oklch, var(--slate) 50%, transparent);
+}
+
+/* ---- reduced motion ----
+   Instant text, static instruments, a static 24% bar, and the caret stops
+   blinking and stays on the prompt. */
+
+@media (prefers-reduced-motion: reduce) {
+  .cc-scan.is-running i {
+    animation: none;
+    opacity: 0.85;
+  }
+
+  .cc-caret {
+    animation: none;
+  }
+
+  .cc-inst .seg span,
+  .cc-inst .cc-scope-col,
+  .cc-inst .cc-row,
+  .cc-inst .cc-more {
+    transition: none !important;
+  }
+
+  .cc-watch[data-state="amber"] .cc-dot {
+    animation: none;
+    box-shadow: 0 0 6px var(--amber);
+  }
+}
+
+@media print {
+  .cold-console,
+  .steward-tabrow {
+    display: none !important;
+  }
+}
+
+/* the consent gate inside the console · same node, same words, same specs.
+   The column behaves the way the shell's does: the log and the palette step
+   aside rather than pushing the choice below the fold, and anything still too
+   tall scrolls inside the panel itself. */
+.cc-consent:has(.steward-consent-panel) {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.cc-main:has(.cc-consent .steward-consent-panel) .cc-log,
+.cc-main:has(.cc-consent .steward-consent-panel) .cc-palette {
+  display: none;
+}

@@ -2235,6 +2235,10 @@ const STEWARD_ANNOUNCE_STATES = new Set(["briefing", "found", "watching", "full"
 
 function stewardShowLine(line, announce = false) {
   if (!stewardLineEl || !line) return;
+  /* /quiet · the announcing states are the ones nobody asked for. While a quiet
+     window is open they are neither drawn nor mirrored into the live region.
+     Everything the user actually pressed for still speaks. */
+  if (announce && ccQuietActive()) return;
   clearTimeout(stewardLineTimer);
   clearTimeout(stewardHideTimer);
   stewardLastLine = line;
@@ -2751,6 +2755,9 @@ function stewardRenderShell() {
   stewardRenderStatus();
   stewardRenderPreroll();
   stewardRenderSuggestions();
+  /* the console's rail reads the same snapshot on the same beat */
+  ccRenderRail();
+  ccRenderHead();
 
   /* a refresh mid-shell rebuilds the panel; the hint outlives the markup it sat in */
   stewardHintMount();
@@ -2805,6 +2812,8 @@ function stewardShellOpen() {
 
 function stewardShellClose(returnFocus = true) {
   if (!stewardShellEl || !stewardDock || !stewardShellOpenState) return;
+  /* the console stands on the shell: it cannot outlive it */
+  ccClose(false);
   stewardChargeCancelAll();
   /* a consent panel left open is a question with no one in front of it —
      closing the shell answers it the safe way: no */
@@ -3124,6 +3133,9 @@ function stewardReplyLine(turn, text, epistemicState) {
   line.appendChild(body);
   turn.appendChild(line);
   if (liveRegion) liveRegion.textContent = text;
+  /* the console shares this path, so it hears the answer here rather than
+     re-implementing the ask. The shell turn is still written either way. */
+  ccAskMirror?.reply?.(text, epistemicState);
   stewardScrollLog();
 }
 
@@ -3183,6 +3195,7 @@ function stewardReceiptLine(turn, envelope, { elapsed = 0, requested = "local" }
   if (fell) line.classList.add("is-fallback");
   line.textContent = receipt;
   turn.appendChild(line);
+  ccAskMirror?.receipt?.(receipt, fell);
 }
 
 /* ---- the preroll · the empty state is a reading, not an invitation ----
@@ -3515,6 +3528,8 @@ function stewardModeApply(mode) {
   stewardMode = STEWARD_MODES.some((entry) => entry.mode === mode) ? mode : "local";
   stewardWriteStore(STEWARD_MODE_KEY, stewardMode);
   stewardModeSync();
+  /* a /mode turn that had to wait for the consent panel is finished here */
+  ccModeApplied(stewardMode);
 }
 
 function stewardModeMove(step) {
@@ -3708,6 +3723,9 @@ function stewardConsentCancel(returnFocus = true) {
   stewardConsentReturnKey = null;
   stewardConsentClose();
   stewardModeSync();
+  /* a cancelled gate must not leave a /mode turn waiting to be printed by some
+     later switch — the clock it was measuring stopped when the answer was no */
+  ccModeCancelled();
   if (returnFocus && key?.isConnected) key.focus({ preventScroll: true });
 }
 
@@ -3717,7 +3735,8 @@ function stewardConsentAllow(mode) {
   stewardConsentReturnKey = null;
   stewardConsentClose();
   stewardModeApply(mode);
-  stewardInput?.focus({ preventScroll: true });
+  /* whichever prompt asked the question is the one that gets the caret back */
+  (ccIsOpen() ? ccInput : stewardInput)?.focus({ preventScroll: true });
 }
 
 function stewardConsentOpen(mode, key) {
@@ -3930,7 +3949,9 @@ async function stewardAsk(raw) {
     if (offline) stewardAskGoOffline();
     else {
       stewardAskBusy(false);
-      if (stewardShellOpenState) stewardInput?.focus({ preventScroll: true });
+      /* the console borrows this path, and the caret belongs to whoever asked */
+      if (ccIsOpen()) ccInput?.focus({ preventScroll: true });
+      else if (stewardShellOpenState) stewardInput?.focus({ preventScroll: true });
     }
   }
 }
@@ -4167,7 +4188,8 @@ function setupSteward() {
   window.addEventListener("blur", stewardGazeDrop);
   document.addEventListener("pointerleave", stewardGazeDrop);
   document.addEventListener("keydown", (event) => {
-    if (event.key !== "Escape" || !stewardShellOpenState) return;
+    /* the console owns Escape while it is up — one key, one meaning */
+    if (event.key !== "Escape" || !stewardShellOpenState || ccIsOpen()) return;
     stewardShellClose();
   });
   setupStewardTabs();
@@ -4176,8 +4198,1567 @@ function setupSteward() {
   stewardArmIdle();
 }
 
+/* ---------- Steward · the cold console (kit "Terminal Spaces v2" · phase 1) ----------
+
+   A full-viewport surface, not a bigger shell. Every slash command is executed
+   here, on this machine, against the snapshot the deck already loaded — no
+   command in this file makes a network request, and the receipts say so in
+   the same four-slot grammar the ask path uses.
+
+   Free text is deliberately NOT a console feature: it goes down the existing
+   ask path, so a question typed here is the same turn, in the same store, and
+   lands in the shell log too. Slash output is console-only — it has no
+   envelope, so there is nothing honest to put in a shell receipt.
+
+   The evidence spine and /why, /find, /back are phase 2. Where the kit reaches
+   for them this file stubs them in words rather than pretending.            */
+
+const CC_BOOT_MS = 160;
+const CC_CPS_FALLBACK = 38;
+const CC_STOP_MS = 90;
+const CC_COMMA_MS = 40;
+const CC_RECEIPT_GAP_MS = 120;
+const CC_INST_STAGGER_MS = 18;
+const CC_MIN_WIDTH = 700;
+const CC_HISTORY_MAX = 50;
+const CC_WATCH_MAX = 4;
+const CC_SCOPE_COLS = 12;
+const CC_TABLE_ROWS = 5;
+const CC_COVERAGE_CELLS = 8;
+const CC_GHOST_MIN = 2;
+const CC_ANSWER_WORDS = 12;
+const CC_AMBER_DELTA = GIB;
+
+const CC_HISTORY_KEY = "steward.cmdHistory";
+const CC_WATCH_KEY = "steward.watches";
+const CC_QUIET_KEY = "steward.quietUntil";
+
+/* the palette IS the command set — the miss receipt counts this list, and Tab
+   completes against it, so there is exactly one place a command exists */
+const CC_PALETTE = [
+  { cmd: "/status", note: "what he can see right now" },
+  { cmd: "/diff", note: "what moved · 24h 7d 30d" },
+  { cmd: "/watch", note: "pin a category to the rail" },
+  { cmd: "/lesson", note: "the next unlogged lesson" },
+  { cmd: "/mode", note: "which engine answers" },
+  { cmd: "/quiet", note: "hold the notices · 30m 1h 2h 4h" },
+  { cmd: "/thanks", note: "he was going to count anyway" },
+];
+
+const CC_WINDOWS = { "24h": 86_400_000, "7d": 7 * 86_400_000, "30d": 30 * 86_400_000 };
+const CC_QUIET = { "30m": 1_800_000, "1h": 3_600_000, "2h": 7_200_000, "4h": 14_400_000 };
+const CC_QUIET_DEFAULT = "2h";
+const CC_DIFF_DEFAULT = "7d";
+
+/* the one refusal sentence. Same words every time — a refusal that rephrases
+   itself is a refusal you argue with. */
+const CC_REFUSE_DELETE = "i don't delete. i can file them for review.";
+const CC_DELETE_VERBS = /\b(delete|remove|clean|cleans|cleanup|wipe|erase|purge|nuke|rm)\b/i;
+
+const CC_BACK_STUB = "cleared. /back will restore this in a future update.";
+
+const ccRoot = document.querySelector("[data-console]");
+const ccOpenKey = document.querySelector("[data-console-open]");
+const ccLogEl = ccRoot?.querySelector("[data-cc-log]");
+const ccInput = ccRoot?.querySelector("[data-cc-input]");
+const ccPromptForm = ccRoot?.querySelector("[data-cc-prompt]");
+const ccGhostEl = ccRoot?.querySelector("[data-cc-ghost]");
+const ccPromptCaret = ccRoot?.querySelector("[data-cc-prompt-caret]");
+const ccPaletteEl = ccRoot?.querySelector("[data-cc-palette]");
+const ccTitleEl = ccRoot?.querySelector("[data-cc-title]");
+const ccScanEl = ccRoot?.querySelector("[data-cc-scan]");
+const ccConsentSlot = ccRoot?.querySelector("[data-cc-consent]");
+const ccWatchListEl = ccRoot?.querySelector("[data-cc-watch-list]");
+const ccWaitingListEl = ccRoot?.querySelector("[data-cc-waiting-list]");
+const ccWaitingCountEl = ccRoot?.querySelector("[data-cc-waiting-count]");
+const ccFaceEl = ccRoot?.querySelector("[data-cc-face]");
+const ccMoodEl = ccRoot?.querySelector("[data-cc-mood]");
+
+let ccOpen = false;
+let ccBusy = false;
+let ccMood = "calm";
+let ccReveal = null;
+let ccBootTimers = [];
+let ccHistory = [];
+let ccHistoryAt = -1;
+let ccDraft = "";
+let ccPaletteOpen = false;
+let ccPaletteAt = -1;
+let ccPaletteRows = [];
+let ccWatches = [];
+let ccSeenWaiting = new Set();
+let ccAskMirror = null;
+let ccModePending = null;
+let ccConsentHome = null;
+let ccReturnFocus = null;
+
+function ccIsOpen() {
+  return ccOpen;
+}
+
+/* ---- /quiet · the window, read from storage every time ----
+   Nothing caches it: a tab that was open when the window closed must not keep
+   suppressing lines, and a tab opened after it must not have to be told. */
+
+function ccQuietUntil() {
+  const raw = Number(stewardReadStore(CC_QUIET_KEY));
+  return Number.isFinite(raw) && raw > 0 ? raw : 0;
+}
+
+function ccQuietActive() {
+  return ccQuietUntil() > Date.now();
+}
+
+/* ---- data reads · the console never fetches ---- */
+
+function ccLatest() {
+  return stewardData.latest || {};
+}
+
+/* validSnapshots drops categoryBytes, which is exactly what /diff needs, so the
+   console keeps its own read of the same array under the same guards */
+function ccSnapshots() {
+  return arrayOr(stewardData.history?.snapshots)
+    .map((snapshot) => ({
+      generatedAt: snapshot?.generatedAt,
+      usedBytes: Math.max(0, numberOr(snapshot?.usedBytes)),
+      availableBytes: Math.max(0, numberOr(snapshot?.availableBytes)),
+      categoryBytes: snapshot?.categoryBytes && typeof snapshot.categoryBytes === "object" && !Array.isArray(snapshot.categoryBytes)
+        ? snapshot.categoryBytes
+        : null,
+      date: safeDate(snapshot?.generatedAt),
+    }))
+    .filter((snapshot) => snapshot.date)
+    .sort((a, b) => a.date - b.date);
+}
+
+function ccCategories() {
+  return arrayOr(ccLatest().categories).filter((category) => category && typeof category === "object");
+}
+
+function ccCategoryTotal() {
+  return ccCategories().reduce((total, category) => total + Math.max(0, numberOr(category?.bytes)), 0);
+}
+
+function ccCoveragePercent() {
+  const coverage = ccLatest().coverage || {};
+  const stated = numberOr(coverage.coveragePercent, NaN);
+  if (Number.isFinite(stated)) return Math.min(100, Math.max(0, stated));
+  const scanned = Math.max(0, numberOr(coverage.scannedBytes));
+  const unknown = Math.max(0, numberOr(coverage.unknownBytes));
+  const total = scanned + unknown;
+  return total > 0 ? (scanned / total) * 100 : 0;
+}
+
+function ccClock() {
+  return formatClock(ccLatest().generatedAt);
+}
+
+function ccEngineWord() {
+  return STEWARD_ENGINE_WORDS.get(stewardMode) || "local";
+}
+
+/* the answer budget · twelve words, and the trim eats the variable part of the
+   sentence rather than its grammar */
+function ccWords(text) {
+  return String(text).trim().split(/\s+/).filter(Boolean).length;
+}
+
+function ccClampTitle(title, sentence) {
+  if (ccWords(sentence(title)) <= CC_ANSWER_WORDS) return title;
+  const words = String(title).trim().split(/\s+/);
+  for (let cut = words.length - 1; cut > 0; cut -= 1) {
+    const shorter = `${words.slice(0, cut).join(" ")}…`;
+    if (ccWords(sentence(shorter)) <= CC_ANSWER_WORDS) return shorter;
+  }
+  return words[0] || title;
+}
+
+function ccLower(value) {
+  return String(value ?? "").toLowerCase();
+}
+
+/* a title that already ends in a full stop must not grow a second one */
+function ccSentenceCase(value) {
+  return ccLower(value).replace(/[.\s]+$/, "");
+}
+
+function ccGb(bytes, digits = 1) {
+  return stewardGb(bytes, digits);
+}
+
+/* ---- the receipt · the same four slots, measured here ----
+
+   A slash command finishes in well under a millisecond, and the ask path's
+   formatter rounds that to "0ms" — a number that reads like a placeholder
+   rather than a reading. Below 1ms this console prints the tenth it actually
+   measured; from 1ms up it hands over to the formatter the shell already uses,
+   so the two surfaces never disagree about what a receipt time looks like. */
+
+function ccReceiptTime(ms) {
+  const value = Number.isFinite(ms) ? Math.max(0, ms) : 0;
+  return value < 1 ? `${value.toFixed(1)}ms` : stewardReceiptTime(value);
+}
+
+/* the slots are handed back unstamped: ccRun closes the clock once the whole
+   command — instruments included — has been built, not partway through it */
+function ccReceipt(slots, started) {
+  return [...slots, ccReceiptTime(ccElapsed(started))].join(" · ");
+}
+
+function ccNow() {
+  return typeof performance === "object" ? performance.now() : Date.now();
+}
+
+function ccElapsed(started) {
+  return ccNow() - started;
+}
+
+/* ---- the mood ---- */
+
+const CC_MOODS = new Set(["calm", "listening", "scanning", "watchful", "pleased"]);
+
+function ccSetMood(mood) {
+  if (!CC_MOODS.has(mood) || mood === ccMood) return;
+  ccMood = mood;
+  if (ccFaceEl) ccFaceEl.dataset.mood = mood;
+  if (ccMoodEl) ccMoodEl.textContent = mood;
+  ccRenderHead();
+}
+
+function ccRenderHead() {
+  if (!ccTitleEl) return;
+  ccTitleEl.textContent = `steward console · ${ccMood} · ${ccClock()} · ${ccEngineWord()}`;
+}
+
+/* ---- the scan bar ----
+   It runs while a command runs and stops on the FIRST character revealed, not
+   the last: the wait is over the moment there is something to read. */
+
+function ccScan(on) {
+  if (!ccScanEl) return;
+  ccScanEl.classList.toggle("is-running", Boolean(on) && !motionReduced());
+  ccScanEl.classList.toggle("is-parked", Boolean(on) && motionReduced());
+  if (!on) ccScanEl.classList.remove("is-running", "is-parked");
+}
+
+function ccPhase(phase) {
+  ccRoot?.setAttribute("data-phase", phase);
+}
+
+/* ---- the log ---- */
+
+function ccScrollLog() {
+  if (ccLogEl) ccLogEl.scrollTop = ccLogEl.scrollHeight;
+}
+
+function ccSystemLine(text) {
+  if (!ccLogEl) return;
+  const line = document.createElement("p");
+  line.className = "cc-system";
+  line.textContent = text;
+  ccLogEl.appendChild(line);
+  ccScrollLog();
+}
+
+/* ---- the one honest typewriter ----
+
+   38 cps fixed, +90ms after a full stop, +40ms after a comma. The caret is a
+   7×15 block that lives at the reveal head and goes back to the prompt when the
+   sentence lands. Receipts are never typed — a receipt that types is a receipt
+   pretending to be thought. Instruments start their stagger only once the
+   sentence and the receipt are both standing. */
+
+function ccCps() {
+  const raw = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--cc-cps"));
+  return Number.isFinite(raw) && raw > 0 ? raw : CC_CPS_FALLBACK;
+}
+
+function ccCharDelay(char, cps) {
+  const base = 1000 / cps;
+  if (char === ".") return base + CC_STOP_MS;
+  if (char === ",") return base + CC_COMMA_MS;
+  return base;
+}
+
+function ccPromptCaretShow(show) {
+  if (ccPromptCaret) ccPromptCaret.hidden = !show;
+}
+
+/* one reveal at a time, and it can always be finished on demand.
+
+   The rate is held against a clock rather than a chain of timers: setTimeout is
+   clamped by throttling, a busy main thread and background tabs, and a
+   "38 cps" that quietly becomes 12 is a lie told in milliseconds. Each frame
+   writes however many characters the elapsed time has actually earned. */
+function ccStartReveal({ target, text, after }) {
+  const caret = document.createElement("span");
+  caret.className = "cc-caret is-head";
+  target.textContent = "";
+  target.appendChild(caret);
+  ccPromptCaretShow(false);
+
+  const cps = ccCps();
+  let at = 0;
+  let due = 0;
+  let frame = 0;
+  let done = false;
+
+  const write = (count) => {
+    caret.remove();
+    target.textContent = text.slice(0, count);
+    if (count < text.length) target.appendChild(caret);
+  };
+
+  /* the first character is the end of the wait — the bar stops here, not when
+     the sentence finishes. A skipped reveal reaches its first character too,
+     so both paths go through this and it runs exactly once. */
+  let begun = false;
+  const begin = () => {
+    if (begun) return;
+    begun = true;
+    ccScan(false);
+    ccPhase("type");
+  };
+
+  const settle = () => {
+    if (done) return;
+    done = true;
+    begin();
+    cancelAnimationFrame(frame);
+    caret.remove();
+    target.textContent = text;
+    ccReveal = null;
+    ccPromptCaretShow(true);
+    after();
+  };
+
+  const tick = (now) => {
+    if (done) return;
+    if (due === 0) {
+      due = now;
+      begin();
+    }
+    while (at < text.length && now >= due) {
+      at += 1;
+      due += ccCharDelay(text[at - 1], cps);
+    }
+    write(at);
+    ccScrollLog();
+    if (at >= text.length) {
+      settle();
+      return;
+    }
+    frame = requestAnimationFrame(tick);
+  };
+
+  ccReveal = { finish: settle };
+
+  if (motionReduced() || text.length === 0) {
+    settle();
+    return;
+  }
+  frame = requestAnimationFrame(tick);
+}
+
+function ccFinishReveal() {
+  const reveal = ccReveal;
+  if (!reveal) return false;
+  reveal.finish();
+  return true;
+}
+
+/* ---- one turn ---- */
+
+function ccPrintTurn({ you, text, mark = "measured", receipt = "", instrument = null, extra = null, mood = "calm", started = ccNow() }) {
+  if (!ccLogEl) return;
+  /* the clock closes here — once the answer, the receipt slots and the
+     instruments have all been built, not partway through them */
+  const receiptLine = Array.isArray(receipt) ? ccReceipt(receipt, started) : receipt;
+  const turn = document.createElement("div");
+  turn.className = "cc-turn";
+
+  if (you) {
+    const youLine = document.createElement("p");
+    youLine.className = "cc-turn-you";
+    const label = document.createElement("span");
+    label.className = "cc-turn-label";
+    label.setAttribute("aria-hidden", "true");
+    label.textContent = "you";
+    const body = document.createElement("span");
+    body.className = "cc-turn-text";
+    body.textContent = you;
+    youLine.append(label, body);
+    turn.appendChild(youLine);
+  }
+
+  const reply = document.createElement("p");
+  reply.className = "cc-turn-reply";
+  reply.appendChild(stewardEpistemicMark(mark));
+  const replyText = document.createElement("span");
+  replyText.className = "cc-turn-text";
+  reply.appendChild(replyText);
+  turn.appendChild(reply);
+
+  ccLogEl.appendChild(turn);
+  ccScrollLog();
+
+  const land = () => {
+    ccSetMood(mood);
+    /* the answer is user-initiated, so it announces even inside a quiet window */
+    if (liveRegion) liveRegion.textContent = text;
+    const tail = () => {
+      if (extra) {
+        const row = document.createElement("p");
+        row.className = "cc-turn-extra";
+        row.appendChild(extra);
+        turn.appendChild(row);
+      }
+      if (receiptLine) {
+        const line = document.createElement("p");
+        line.className = "cc-receipt";
+        line.textContent = receiptLine;
+        turn.appendChild(line);
+      }
+      if (instrument) {
+        instrument.classList.add("cc-inst");
+        turn.appendChild(instrument);
+        /* the stagger is CSS; this only says when it may begin. The unlit state
+           is committed with a forced reflow rather than a frame callback — a
+           starved rAF would otherwise leave the instruments at opacity 0 with
+           nothing left to start them. */
+        void instrument.offsetWidth;
+        instrument.classList.add("is-lit");
+      }
+      ccScrollLog();
+      ccBusy = false;
+      ccPhase("idle");
+    };
+    if (motionReduced() || !receiptLine) tail();
+    else setTimeout(tail, CC_RECEIPT_GAP_MS);
+  };
+
+  ccStartReveal({ target: replyText, text, after: land });
+}
+
+/* ---- instruments ---- */
+
+function ccInstrument(html) {
+  const node = document.createElement("div");
+  node.innerHTML = html;
+  return node;
+}
+
+function ccSegBlock(percent, cells, label, tone = "signal") {
+  return ccInstrument(`
+    ${seg(percent, tone, cells)}
+    <p class="cc-inst-label">${escapeHtml(label)}</p>
+  `);
+}
+
+/* the scope · one column per reading in the window, in a fixed twelve-slot
+   grid. Two readings draw two columns and leave the other ten empty, which is
+   the honest picture of a history two days old. */
+function ccScopeBlock(snapshots) {
+  const shown = snapshots.slice(-CC_SCOPE_COLS);
+  const max = Math.max(...shown.map((snapshot) => snapshot.usedBytes), 1);
+  const columns = shown.map((snapshot, index) => {
+    const height = Math.max(6, Math.min(100, (snapshot.usedBytes / max) * 100));
+    return `<span class="cc-scope-col${index === shown.length - 1 ? " is-now" : ""}" style="--h:${height.toFixed(2)};--k:${index}"></span>`;
+  }).join("");
+  return `
+    <div class="cc-scope" style="--sd:${CC_INST_STAGGER_MS}ms" aria-hidden="true">${columns}</div>
+    <p class="cc-inst-label">used bytes · ${shown.length} reading${shown.length === 1 ? "" : "s"} · peak ${escapeHtml(ccGb(max, 0))} gb</p>
+  `;
+}
+
+function ccTableBlock(rows, offset) {
+  const shown = rows.slice(0, CC_TABLE_ROWS);
+  const more = rows.length - shown.length;
+  const body = shown.map((row, index) => `
+    <div class="cc-row" style="--k:${offset + index}">
+      <span class="cc-cell-name" title="${escapeHtml(row.label)}">${escapeHtml(ccLower(row.label))}</span>
+      <span class="cc-cell-size mono-num">${escapeHtml(formatBytes(row.bytes).toLowerCase())}</span>
+      <span class="cc-cell-delta mono-num" data-dir="${row.delta > 0 ? "up" : row.delta < 0 ? "down" : "flat"}">${escapeHtml(row.delta === 0 ? "0" : `${row.delta > 0 ? "+" : "−"}${ccGb(Math.abs(row.delta), 2)}`)}</span>
+    </div>
+  `).join("");
+  /* phase-2 spine hook: the overflow line is where /find will pick up. Until it
+     exists the line is dim and does nothing — it never pretends to be a link. */
+  const tail = more > 0
+    ? `<p class="cc-more" style="--k:${offset + shown.length}">+ ${more} more</p>`
+    : "";
+  return `<div class="cc-table" style="--sd:${CC_INST_STAGGER_MS}ms">${body}${tail}</div>`;
+}
+
+/* ---- the commands ----
+   Each returns the shape ccPrintTurn takes. Nothing in here is async, nothing
+   in here touches the network, and every number is read off the loaded data. */
+
+function ccCmdStatus(started) {
+  const categories = ccCategories();
+  const disk = diskState(ccLatest());
+  const coverage = ccCoveragePercent();
+  const scanned = numberOr(ccLatest().coverage?.scannedBytes);
+  const percent = Math.round(coverage);
+  return {
+    text: `${categories.length} categories tracked. ${ccGb(disk.available, 0)} gb free. coverage ${percent}%.`,
+    mark: "measured",
+    receipt: [
+      "local",
+      `${categories.length} categories, snapshot ${ccClock()}`,
+      STEWARD_RECEIPT_SCOPE_LOCAL,
+    ],
+    instrument: ccSegBlock(
+      coverage,
+      CC_COVERAGE_CELLS,
+      `attributed · ${ccGb(scanned, 0)} gb of ${ccGb(disk.used, 0)} gb used`,
+    ),
+    mood: "calm",
+  };
+}
+
+/* the window is clamped to what was actually collected, and the receipt names
+   the sample count rather than the window that was asked for */
+function ccDiffWindow(snapshots, token) {
+  const span = CC_WINDOWS[token] ?? CC_WINDOWS[CC_DIFF_DEFAULT];
+  const last = snapshots.at(-1);
+  const cutoff = last.date.getTime() - span;
+  const within = snapshots.filter((snapshot) => snapshot.date.getTime() >= cutoff);
+  return within.length >= 2 ? within : snapshots.slice(-2);
+}
+
+function ccDeltas(window) {
+  const categories = ccCategories();
+  const first = window[0];
+  const last = window.at(-1);
+  const usable = first?.categoryBytes && last?.categoryBytes;
+  return categories.map((category) => {
+    const id = String(category?.id ?? "");
+    const bytes = Math.max(0, numberOr(category?.bytes));
+    const delta = usable && Object.hasOwn(last.categoryBytes, id) && Object.hasOwn(first.categoryBytes, id)
+      ? numberOr(last.categoryBytes[id]) - numberOr(first.categoryBytes[id])
+      : numberOr(category?.deltaBytes);
+    return { id, label: String(category?.label || id), bytes, delta };
+  });
+}
+
+function ccCmdDiff(started, arg) {
+  const token = Object.hasOwn(CC_WINDOWS, ccLower(arg)) ? ccLower(arg) : CC_DIFF_DEFAULT;
+  const snapshots = ccSnapshots();
+
+  if (snapshots.length < 2) {
+    return {
+      text: "one reading. nothing to compare yet.",
+      mark: "unavailable",
+      receipt: [
+        "local",
+        `${snapshots.length} reading${snapshots.length === 1 ? "" : "s"} on file`,
+        STEWARD_RECEIPT_SCOPE_LOCAL,
+      ],
+      mood: "watchful",
+    };
+  }
+
+  const window = ccDiffWindow(snapshots, token);
+  const deltas = ccDeltas(window);
+  const grew = deltas.filter((row) => row.delta > 0);
+  const ranked = [...deltas].sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+  const top = grew.slice().sort((a, b) => b.delta - a.delta)[0];
+
+  const text = grew.length === 0
+    ? "nothing grew in that window. that is the reading."
+    : `${grew.length} categories grew. ${ccLower(top.label)} leads at ${ccGb(top.delta)} gb.`;
+
+  const instrument = ccInstrument(`
+    ${ccScopeBlock(window)}
+    ${ccTableBlock(ranked.filter((row) => row.delta !== 0).length ? ranked.filter((row) => row.delta !== 0) : ranked, window.length)}
+  `);
+
+  return {
+    text,
+    mark: "measured",
+    receipt: [
+      "local",
+      `${window.length} reading${window.length === 1 ? "" : "s"} in ${token}`,
+      STEWARD_RECEIPT_SCOPE_LOCAL,
+    ],
+    instrument,
+    mood: "calm",
+  };
+}
+
+/* ---- /watch ---- */
+
+function ccLev(a, b) {
+  const m = a.length;
+  const n = b.length;
+  if (Math.abs(m - n) > 2) return 3;
+  let previous = Array.from({ length: n + 1 }, (_, index) => index);
+  for (let i = 1; i <= m; i += 1) {
+    const row = [i];
+    for (let j = 1; j <= n; j += 1) {
+      row[j] = Math.min(previous[j] + 1, row[j - 1] + 1, previous[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    previous = row;
+  }
+  return previous[n];
+}
+
+function ccMatchCategory(query) {
+  const needle = ccLower(query).trim();
+  if (!needle) return { hit: null, near: [] };
+  const categories = ccCategories();
+  const exact = categories.find((category) => ccLower(category?.id) === needle || ccLower(category?.label) === needle);
+  if (exact) return { hit: exact, near: [] };
+  const starts = categories.filter((category) => ccLower(category?.id).startsWith(needle) || ccLower(category?.label).startsWith(needle));
+  if (starts.length === 1) return { hit: starts[0], near: [] };
+  const contains = categories.filter((category) => ccLower(category?.id).includes(needle) || ccLower(category?.label).includes(needle));
+  if (contains.length === 1) return { hit: contains[0], near: [] };
+  if (contains.length > 1) return { hit: null, near: contains.slice(0, 2) };
+  const close = categories.filter((category) => ccLev(needle, ccLower(category?.id)) <= 2 || ccLev(needle, ccLower(category?.label)) <= 2);
+  return { hit: null, near: close.slice(0, 2) };
+}
+
+function ccReadWatches() {
+  try {
+    const raw = JSON.parse(stewardReadStore(CC_WATCH_KEY) || "[]");
+    if (!Array.isArray(raw)) return [];
+    const known = new Set(ccCategories().map((category) => String(category?.id)));
+    return raw
+      .filter((id) => typeof id === "string" && known.has(id))
+      .slice(-CC_WATCH_MAX);
+  } catch {
+    return [];
+  }
+}
+
+function ccWriteWatches() {
+  try {
+    stewardWriteStore(CC_WATCH_KEY, JSON.stringify(ccWatches.slice(-CC_WATCH_MAX)));
+  } catch {
+    /* per-viewer convenience only */
+  }
+}
+
+function ccCmdWatch(started, arg) {
+  if (!arg) {
+    return {
+      text: "name a category. i cannot watch nothing.",
+      mark: "unavailable",
+      receipt: ["local", "no argument given", "nothing ran"],
+      mood: "watchful",
+    };
+  }
+  const { hit, near } = ccMatchCategory(arg);
+  if (!hit) {
+    const guess = near.length === 1
+      ? ` did you mean ${ccLower(near[0].label)}?`
+      : near.length > 1
+        ? ` nearest are ${ccLower(near[0].label)} and ${ccLower(near[1].label)}.`
+        : "";
+    return {
+      text: `no such category.${guess || " / lists what i know."}`,
+      mark: "unavailable",
+      receipt: ["local", `no match in ${ccCategories().length} categories`, "nothing ran"],
+      mood: "watchful",
+    };
+  }
+
+  const id = String(hit.id);
+  ccWatches = ccWatches.filter((entry) => entry !== id);
+  ccWatches.push(id);
+  /* the fifth pin replaces the oldest — the rail is four rows, always */
+  while (ccWatches.length > CC_WATCH_MAX) ccWatches.shift();
+  ccWriteWatches();
+  ccRenderRail();
+
+  return {
+    text: `watching ${ccLower(hit.label)}. i'll flag it if it grows.`,
+    mark: "measured",
+    receipt: ["local", "pinned to rail", "watch persists locally"],
+    mood: "watchful",
+  };
+}
+
+/* ---- /lesson ---- */
+
+function ccCmdLesson(started) {
+  const schedule = lessonSchedule(stewardData.lessons);
+  const total = schedule.lessons.length;
+  if (total === 0) {
+    return {
+      text: "no lessons on file yet.",
+      mark: "unavailable",
+      receipt: ["local", "0 lessons on file", "nothing ran"],
+      mood: "watchful",
+    };
+  }
+  const logged = readCompletedLessons();
+  const loggedCount = schedule.lessons.filter((lesson) => logged.includes(lesson?.id)).length;
+  const at = schedule.lessons.findIndex((lesson) => !logged.includes(lesson?.id));
+  /* the meter is the whole course; the threshold tick is omitted on purpose —
+     there is no target number of lessons, only the next one */
+  const meter = ccSegBlock(
+    (loggedCount / total) * 100,
+    total,
+    `${loggedCount} of ${total} logged`,
+  );
+
+  if (at < 0) {
+    return {
+      text: "every lesson is logged. nothing queued.",
+      mark: "measured",
+      receipt: ["local", `${total} of ${total} logged`, "progress stored locally"],
+      instrument: meter,
+      mood: "pleased",
+    };
+  }
+
+  const lesson = schedule.lessons[at];
+  const minutes = Math.max(1, Math.round(numberOr(lesson?.readMinutes, 4)));
+  const number = at + 1;
+  const sentence = (title) => `lesson ${number}: ${title}. ${minutes} minutes.`;
+  const title = ccClampTitle(ccSentenceCase(lesson?.title || lesson?.id || "untitled"), sentence);
+
+  return {
+    text: sentence(title),
+    mark: "measured",
+    receipt: ["local", `lesson ${number} of ${total}`, "progress stored locally"],
+    instrument: meter,
+    mood: "calm",
+  };
+}
+
+/* ---- /mode · the existing machinery, asked from here ---- */
+
+function ccModeReceipt(mode) {
+  return ["local", `engine set to ${STEWARD_ENGINE_WORDS.get(mode) || mode}`, STEWARD_RECEIPT_SCOPE_LOCAL];
+}
+
+function ccModeSuccessText(mode) {
+  return `engine is ${STEWARD_ENGINE_WORDS.get(mode) || mode}. answers still come from me.`;
+}
+
+/* stewardModeApply calls this on every switch; only a /mode turn that had to
+   wait for the consent panel is finished by it */
+function ccModeApplied(mode) {
+  const pending = ccModePending;
+  if (!pending || pending.mode !== mode) return;
+  ccModePending = null;
+  ccBusy = true;
+  ccPhase("scan");
+  ccPrintTurn({
+    you: pending.line,
+    text: ccModeSuccessText(mode),
+    mark: "measured",
+    receipt: ccModeReceipt(mode),
+    mood: "calm",
+    started: pending.started,
+  });
+  ccRenderHead();
+}
+
+/* the gate was answered "no": nothing switched, nothing to print, and the
+   console goes back to waiting on the person rather than on itself */
+function ccModeCancelled() {
+  if (!ccModePending) return;
+  ccModePending = null;
+  ccBusy = false;
+  ccPhase("idle");
+  ccSetMood(ccInput?.value ? "listening" : "calm");
+}
+
+function ccCmdMode(started, arg, line) {
+  const engines = STEWARD_MODES;
+  if (!arg) {
+    const rows = engines.map((entry, index) => `
+      <div class="cc-row cc-row-mode" style="--k:${index}">
+        <span class="cc-cell-name">${escapeHtml(ccLower(entry.label))}</span>
+        <span class="cc-cell-note">${escapeHtml(stewardModeNote(entry.mode))}</span>
+      </div>
+    `).join("");
+    return {
+      text: `${engines.length} engines. the note beside each says why.`,
+      mark: "measured",
+      receipt: ["local", `${engines.length} engines listed`, STEWARD_RECEIPT_SCOPE_LOCAL],
+      instrument: ccInstrument(`<div class="cc-table" style="--sd:${CC_INST_STAGGER_MS}ms">${rows}</div>`),
+      mood: "calm",
+    };
+  }
+
+  const wanted = ccLower(arg);
+  const entry = engines.find((mode) => mode.mode === wanted || ccLower(mode.label) === wanted)
+    || (wanted === "claude" ? engines.find((mode) => mode.mode === "anthropic") : null);
+
+  if (!entry) {
+    return {
+      text: `no such engine. i know ${engines.map((mode) => ccLower(mode.label)).join(", ")}.`,
+      mark: "unavailable",
+      receipt: ["local", `no match in ${engines.length} engines`, "nothing ran"],
+      mood: "watchful",
+    };
+  }
+
+  if (entry.mode === stewardMode) {
+    return {
+      text: ccModeSuccessText(entry.mode),
+      mark: "measured",
+      receipt: ccModeReceipt(entry.mode),
+      mood: "calm",
+    };
+  }
+
+  if (!stewardProviderReady(entry.mode)) {
+    return {
+      text: `no key for ${ccLower(entry.label)}. staying local.`,
+      mark: "unavailable",
+      receipt: ["local", "provider not configured", "nothing ran"],
+      mood: "watchful",
+    };
+  }
+
+  if (entry.mode === "local" || stewardConsentGranted(entry.mode)) {
+    stewardModeApply(entry.mode);
+    return {
+      text: ccModeSuccessText(entry.mode),
+      mark: "measured",
+      receipt: ccModeReceipt(entry.mode),
+      mood: "calm",
+    };
+  }
+
+  /* the gate is the same panel, the same words and the same storage key — it is
+     simply opened inside this overlay. The turn finishes when it is answered. */
+  ccModePending = { mode: entry.mode, started, line };
+  stewardConsentOpen(entry.mode, ccInput);
+  return { deferred: true };
+}
+
+/* ---- /quiet ---- */
+
+function ccCmdQuiet(started, arg) {
+  const token = arg ? ccLower(arg) : CC_QUIET_DEFAULT;
+  if (!Object.hasOwn(CC_QUIET, token)) {
+    return {
+      text: `i know ${Object.keys(CC_QUIET).join(", ")}.`,
+      mark: "unavailable",
+      receipt: ["local", `no match in ${Object.keys(CC_QUIET).length} durations`, "nothing ran"],
+      mood: "watchful",
+    };
+  }
+  const until = Date.now() + CC_QUIET[token];
+  stewardWriteStore(CC_QUIET_KEY, String(until));
+  /* the sentence is exact about its own scope: this stops notices, and the
+     collector is not a notice */
+  return {
+    text: `quiet until ${formatClock(new Date(until).toISOString())}. the collector keeps running.`,
+    mark: "measured",
+    receipt: ["local", "notifications only", "automation unaffected"],
+    mood: "calm",
+  };
+}
+
+/* ---- /thanks · the only easter egg ---- */
+
+function ccCmdThanks(started) {
+  return {
+    text: "noted. i was going to count them anyway.",
+    mark: "measured",
+    receipt: ["local", "easter egg 1 of 1", "nothing measured"],
+    mood: "pleased",
+  };
+}
+
+/* ---- the deletion refusal ----
+   Intercepted on this machine, before the endpoint: a refusal that had to make
+   a network call is a refusal that already lost. */
+
+function ccSafeCandidate() {
+  return arrayOr(ccLatest().reclaimable)
+    .filter((item) => numberOr(item?.bytes) > 0
+      && STEWARD_SAFE_RISKS.has(safeToken(item?.risk, ["safe", "rebuildable", "low", "medium", "high", "review"], "review")))
+    .sort((a, b) => numberOr(b?.bytes) - numberOr(a?.bytes))[0] || null;
+}
+
+function ccHoldKey() {
+  const candidate = ccSafeCandidate();
+  if (!candidate) return null;
+  const target = stewardReviewButton(String(candidate.id));
+  if (!target) return null;
+  const key = document.createElement("button");
+  key.type = "button";
+  key.className = "steward-key cc-hold";
+  key.dataset.stewardHold = String(candidate.id);
+  key.setAttribute("aria-pressed", "false");
+  key.title = STEWARD_HOLD_TITLE;
+  key.setAttribute("aria-label", `Hold ${candidate.label || candidate.id} for review`);
+  const label = document.createElement("span");
+  label.dataset.holdLabel = "";
+  label.textContent = "hold";
+  key.appendChild(label);
+  stewardSyncHold(key, target);
+  stewardBindHold(key, target);
+  return key;
+}
+
+function ccRefuseDeletion(started) {
+  return {
+    text: CC_REFUSE_DELETE,
+    mark: "unavailable",
+    receipt: ["local", "refused", "nothing was touched"],
+    extra: ccHoldKey(),
+    mood: "watchful",
+  };
+}
+
+/* ---- misses ---- */
+
+function ccMiss(started, typed) {
+  const near = CC_PALETTE.filter((entry) => ccLev(typed, entry.cmd) <= 2);
+  let text = "no such command. / lists what i know.";
+  if (near.length === 1) text = `no such command. did you mean ${near[0].cmd}?`;
+  else if (near.length > 1) text = `no such command. nearest are ${near[0].cmd} and ${near[1].cmd}.`;
+  return {
+    text,
+    mark: "unavailable",
+    receipt: ["local", `no match in ${CC_PALETTE.length} commands`, "nothing ran"],
+    mood: "watchful",
+  };
+}
+
+/* ---- the rail ---- */
+
+function ccWatchState(category) {
+  const delta = numberOr(category?.deltaBytes, NaN);
+  if (!Number.isFinite(delta)) return "slate";
+  return delta >= CC_AMBER_DELTA ? "amber" : "signal";
+}
+
+function ccRenderWatching() {
+  if (!ccWatchListEl) return;
+  ccWatchListEl.textContent = "";
+  const total = ccCategoryTotal();
+  const byId = new Map(ccCategories().map((category) => [String(category?.id), category]));
+  const live = ccWatches.filter((id) => byId.has(id));
+  if (live.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "cc-rail-empty";
+    empty.textContent = "nothing pinned";
+    ccWatchListEl.appendChild(empty);
+    return;
+  }
+  live.forEach((id) => {
+    const category = byId.get(id);
+    const share = total > 0 ? (Math.max(0, numberOr(category?.bytes)) / total) * 100 : 0;
+    const row = document.createElement("p");
+    row.className = "cc-watch";
+    row.dataset.state = ccWatchState(category);
+    const dot = document.createElement("i");
+    dot.className = "cc-dot";
+    dot.setAttribute("aria-hidden", "true");
+    const name = document.createElement("span");
+    name.className = "cc-watch-name";
+    name.textContent = ccLower(category?.label || id);
+    name.title = String(category?.label || id);
+    const value = document.createElement("span");
+    value.className = "cc-watch-share mono-num";
+    value.textContent = `${share.toFixed(1)}%`;
+    row.append(dot, name, value);
+    ccWatchListEl.appendChild(row);
+  });
+}
+
+/* the parked readout queue, folded to three real items. Nothing here is
+   invented: each row is a measurement that already exists on the deck. */
+function ccWaitingItems() {
+  const latest = ccLatest();
+  const { disk, reviewBytes } = stewardReadDisk(latest);
+  const snapshots = ccSnapshots();
+  const items = [];
+  if (reviewBytes > 0) {
+    items.push({ id: "review", text: `${ccGb(reviewBytes)} gb worth a review`, run: "/status" });
+  }
+  if (disk.usedPercent >= 80) {
+    items.push({ id: "band", text: `disk at ${Math.round(disk.usedPercent)}%`, run: "/diff 7d" });
+  }
+  if (snapshots.length === 2) {
+    items.push({ id: "trend", text: "trend unlocked", run: "/diff 7d" });
+  }
+  return items.slice(0, 3);
+}
+
+function ccRenderWaiting() {
+  if (!ccWaitingListEl) return;
+  const items = ccWaitingItems();
+  ccWaitingListEl.textContent = "";
+  items.forEach((item) => {
+    const key = document.createElement("button");
+    key.type = "button";
+    key.className = "cc-wait";
+    key.dataset.seen = String(ccSeenWaiting.has(item.id));
+    key.textContent = item.text;
+    key.addEventListener("click", () => {
+      ccSeenWaiting.add(item.id);
+      ccRenderWaiting();
+      ccSubmit(item.run);
+    });
+    ccWaitingListEl.appendChild(key);
+  });
+  if (items.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "cc-rail-empty";
+    empty.textContent = "queue is empty";
+    ccWaitingListEl.appendChild(empty);
+  }
+  if (ccWaitingCountEl) {
+    const unseen = items.filter((item) => !ccSeenWaiting.has(item.id)).length;
+    ccWaitingCountEl.textContent = unseen > 0 ? String(unseen) : "clear";
+    ccWaitingCountEl.dataset.state = unseen > 0 ? "unseen" : "clear";
+  }
+}
+
+function ccRenderRail() {
+  if (!ccRoot) return;
+  ccWatches = ccWatches.length ? ccWatches.filter((id) => ccCategories().some((category) => String(category?.id) === id)) : ccReadWatches();
+  ccRenderWatching();
+  ccRenderWaiting();
+}
+
+/* ---- the palette ---- */
+
+function ccPaletteMatches(text) {
+  const typed = ccLower(text).trim();
+  if (!typed.startsWith("/")) return CC_PALETTE;
+  const head = typed.split(/\s+/)[0];
+  const hits = CC_PALETTE.filter((entry) => entry.cmd.startsWith(head));
+  return hits.length ? hits : CC_PALETTE;
+}
+
+function ccPaletteRender() {
+  if (!ccPaletteEl) return;
+  ccPaletteRows = ccPaletteMatches(ccInput?.value || "");
+  ccPaletteEl.textContent = "";
+  ccPaletteRows.forEach((entry, index) => {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "cc-pal-row";
+    row.setAttribute("role", "option");
+    row.setAttribute("aria-selected", String(index === ccPaletteAt));
+    row.tabIndex = -1;
+    const cmd = document.createElement("span");
+    cmd.className = "cc-pal-cmd";
+    cmd.textContent = entry.cmd;
+    const note = document.createElement("span");
+    note.className = "cc-pal-note";
+    note.textContent = entry.note;
+    row.append(cmd, note);
+    row.addEventListener("click", () => ccPaletteInsert(index));
+    ccPaletteEl.appendChild(row);
+  });
+}
+
+function ccPaletteShow() {
+  if (!ccPaletteEl || ccPaletteOpen) return;
+  ccPaletteOpen = true;
+  ccPaletteAt = -1;
+  ccPaletteEl.hidden = false;
+  ccInput?.setAttribute("aria-expanded", "true");
+  ccPaletteRender();
+}
+
+function ccPaletteClose() {
+  if (!ccPaletteEl || !ccPaletteOpen) return;
+  ccPaletteOpen = false;
+  ccPaletteAt = -1;
+  ccPaletteEl.hidden = true;
+  ccInput?.setAttribute("aria-expanded", "false");
+}
+
+function ccPaletteMove(step) {
+  if (!ccPaletteOpen || ccPaletteRows.length === 0) return;
+  const at = ccPaletteAt < 0 ? (step > 0 ? -1 : 0) : ccPaletteAt;
+  ccPaletteAt = (at + step + ccPaletteRows.length) % ccPaletteRows.length;
+  ccPaletteRender();
+  ccPaletteEl?.children[ccPaletteAt]?.scrollIntoView({ block: "nearest" });
+}
+
+function ccPaletteInsert(index) {
+  const entry = ccPaletteRows[index] || ccPaletteRows[0];
+  if (!entry || !ccInput) return;
+  ccInput.value = `${entry.cmd} `;
+  ccPaletteClose();
+  ccInput.focus({ preventScroll: true });
+  ccSyncPrompt();
+}
+
+/* ---- the ghost ---- */
+
+function ccGhostFor(text) {
+  const typed = text.trim();
+  if (typed.length < CC_GHOST_MIN || !typed.startsWith("/") || /\s/.test(typed)) return "";
+  const hit = CC_PALETTE.find((entry) => entry.cmd.startsWith(typed) && entry.cmd !== typed);
+  return hit ? hit.cmd.slice(typed.length) : "";
+}
+
+function ccSyncPrompt() {
+  if (!ccInput) return;
+  const value = ccInput.value;
+  const at = typeof ccInput.selectionStart === "number" ? ccInput.selectionStart : value.length;
+  const ghost = at === value.length ? ccGhostFor(value) : "";
+  if (ccGhostEl) {
+    ccGhostEl.textContent = ghost;
+    ccGhostEl.style.setProperty("--n", String(value.length));
+  }
+  if (ccPromptCaret) {
+    ccPromptCaret.style.setProperty("--n", String(at));
+    /* past the field's own width the ch maths stops being true, so the block
+       caret steps aside and the native caret does the job */
+    ccPromptCaret.classList.toggle("is-off", ccInput.scrollLeft > 0);
+  }
+  if (ccPaletteOpen) ccPaletteRender();
+  if (!ccBusy) ccSetMood(value.length > 0 ? "listening" : "calm");
+}
+
+/* ---- command history ---- */
+
+function ccReadHistory() {
+  try {
+    const raw = JSON.parse(stewardReadStore(CC_HISTORY_KEY) || "[]");
+    if (!Array.isArray(raw)) return [];
+    return raw.filter((entry) => typeof entry === "string" && entry.trim()).slice(0, CC_HISTORY_MAX);
+  } catch {
+    return [];
+  }
+}
+
+function ccPushHistory(text) {
+  /* newest first, no adjacent repeat, and editing a recall never rewrites it */
+  if (ccHistory[0] === text) {
+    ccHistoryAt = -1;
+    return;
+  }
+  ccHistory.unshift(text);
+  while (ccHistory.length > CC_HISTORY_MAX) ccHistory.pop();
+  ccHistoryAt = -1;
+  try {
+    stewardWriteStore(CC_HISTORY_KEY, JSON.stringify(ccHistory));
+  } catch {
+    /* per-viewer convenience only */
+  }
+}
+
+function ccRecall(step) {
+  if (!ccInput || ccHistory.length === 0) return;
+  if (ccHistoryAt < 0 && step > 0) ccDraft = ccInput.value;
+  const next = ccHistoryAt + step;
+  if (next < 0) {
+    ccHistoryAt = -1;
+    ccInput.value = ccDraft;
+  } else {
+    ccHistoryAt = Math.min(next, ccHistory.length - 1);
+    ccInput.value = ccHistory[ccHistoryAt];
+  }
+  ccInput.setSelectionRange(ccInput.value.length, ccInput.value.length);
+  ccSyncPrompt();
+}
+
+/* ---- running one line ---- */
+
+function ccSubmit(raw) {
+  const text = String(raw ?? "").trim();
+  /* a command entered mid-reveal completes the current one instantly, then
+     runs — answers never interleave */
+  ccFinishReveal();
+  ccPaletteClose();
+  if (ccInput) ccInput.value = "";
+  ccSyncPrompt();
+  /* empty Enter re-runs the status board */
+  const line = text || "/status";
+  ccPushHistory(line);
+  ccRun(line);
+}
+
+function ccRun(line) {
+  ccBusy = true;
+  ccSetMood("scanning");
+  ccPhase("scan");
+  ccScan(true);
+  const started = ccNow();
+
+  if (!line.startsWith("/")) {
+    ccFreeText(line, started);
+    return;
+  }
+
+  const [head, ...rest] = line.split(/\s+/);
+  const arg = rest.join(" ").trim();
+  const cmd = ccLower(head);
+
+  let result;
+  if (cmd === "/status") result = ccCmdStatus(started);
+  else if (cmd === "/diff") result = ccCmdDiff(started, arg);
+  else if (cmd === "/watch") result = ccCmdWatch(started, arg);
+  else if (cmd === "/lesson") result = ccCmdLesson(started);
+  else if (cmd === "/mode") result = ccCmdMode(started, arg, line);
+  else if (cmd === "/quiet") result = ccCmdQuiet(started, arg);
+  else if (cmd === "/thanks") result = ccCmdThanks(started);
+  else result = ccMiss(started, cmd);
+
+  if (result?.deferred) {
+    /* the consent panel owns the screen until it is answered. Nothing is
+       running while it stands there — the wait belongs to the person, so the
+       scan bar stops and he goes back to listening rather than scanning. */
+    ccScan(false);
+    ccPhase("idle");
+    ccBusy = false;
+    ccSetMood("listening");
+    return;
+  }
+
+  ccPrintTurn({ you: line, started, ...result });
+}
+
+/* free text · the shell's ask path, mirrored into this log. The turn exists in
+   both places because it is one turn: same endpoint, same mode, same store. */
+function ccFreeText(line, started) {
+  if (CC_DELETE_VERBS.test(line) && ccWords(line) > 1) {
+    ccPrintTurn({ you: line, started, ...ccRefuseDeletion(started) });
+    return;
+  }
+
+  if (stewardAskOffline || typeof fetch !== "function") {
+    ccPrintTurn({
+      you: line,
+      text: STEWARD_ASK_OFFLINE,
+      mark: "unavailable",
+      receipt: ["local", "no endpoint", "nothing ran"],
+      mood: "watchful",
+      started,
+    });
+    return;
+  }
+
+  let printed = false;
+  let pendingReceipt = "";
+  ccAskMirror = {
+    reply: (text, epistemic) => {
+      printed = true;
+      ccPrintTurn({
+        you: line,
+        text,
+        mark: Object.hasOwn(STEWARD_EPISTEMIC, epistemic) ? epistemic : "measured",
+        /* the receipt lands one beat behind the reply on this path too: it is
+           written by stewardReceiptLine, which runs right after */
+        receipt: "",
+        mood: epistemic === "unavailable" ? "watchful" : "calm",
+      });
+    },
+    receipt: (text) => {
+      pendingReceipt = text;
+      const turn = ccLogEl?.lastElementChild;
+      if (!turn || turn.querySelector(".cc-receipt")) return;
+      const node = document.createElement("p");
+      node.className = "cc-receipt";
+      node.textContent = pendingReceipt;
+      turn.appendChild(node);
+      ccScrollLog();
+    },
+  };
+
+  Promise.resolve(stewardAsk(line)).finally(() => {
+    ccAskMirror = null;
+    if (printed) return;
+    ccPrintTurn({
+      you: line,
+      text: STEWARD_ASK_FAILURE,
+      mark: "unavailable",
+      receipt: ["local", "no answer", "nothing ran"],
+      mood: "watchful",
+      started,
+    });
+  });
+}
+
+/* ---- boot ----
+   Three lines of real measurement at 160ms. Any key skips them; reduced motion
+   never plays them at all. */
+
+function ccClearBoot() {
+  ccBootTimers.forEach((timer) => clearTimeout(timer));
+  ccBootTimers = [];
+}
+
+function ccBootLines() {
+  /* a file smaller than a kilobyte rounds to "0 kb", which reads as "nothing
+     was read". Below 1 kb the tenth that was actually measured is printed. */
+  const kb = (value) => {
+    const size = Math.max(0, JSON.stringify(value ?? {}).length / 1024);
+    return size < 1 ? size.toFixed(1) : String(Math.round(size));
+  };
+  const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  const lessons = lessonSchedule(stewardData.lessons).lessons.length;
+  return [
+    `reading latest.json · ${kb(stewardData.latest)} kb`,
+    `reading history.json · ${kb(stewardData.history)} kb`,
+    [
+      count(ccCategories().length, "category", "categories"),
+      count(ccSnapshots().length, "snapshot", "snapshots"),
+      count(lessons, "lesson", "lessons"),
+    ].join(" · "),
+  ];
+}
+
+function ccBootSkip() {
+  if (ccBootTimers.length === 0) return false;
+  ccClearBoot();
+  ccBootLines().forEach((text) => {
+    if (![...(ccLogEl?.children || [])].some((node) => node.textContent === text)) ccSystemLine(text);
+  });
+  ccInput?.focus({ preventScroll: true });
+  return true;
+}
+
+function ccBoot() {
+  ccClearBoot();
+  const lines = ccBootLines();
+  if (motionReduced()) {
+    lines.forEach((text) => ccSystemLine(text));
+    ccInput?.focus({ preventScroll: true });
+    return;
+  }
+  lines.forEach((text, index) => {
+    ccBootTimers.push(setTimeout(() => {
+      ccSystemLine(text);
+      if (index === lines.length - 1) {
+        ccClearBoot();
+        ccInput?.focus({ preventScroll: true });
+      }
+    }, index * CC_BOOT_MS));
+  });
+}
+
+/* ---- open and leave ---- */
+
+function ccAvailable() {
+  return Boolean(ccRoot) && window.innerWidth >= CC_MIN_WIDTH;
+}
+
+function ccSyncAvailability() {
+  if (!ccOpenKey) return;
+  /* the rail never collapses. Below its width the door is simply not drawn. */
+  ccOpenKey.hidden = !ccAvailable();
+}
+
+function ccConsentBorrow() {
+  if (!stewardConsentEl || !ccConsentSlot) return;
+  ccConsentHome = { parent: stewardConsentEl.parentNode, next: stewardConsentEl.nextSibling };
+  ccConsentSlot.appendChild(stewardConsentEl);
+}
+
+function ccConsentReturn() {
+  if (!stewardConsentEl || !ccConsentHome?.parent) return;
+  ccConsentHome.parent.insertBefore(stewardConsentEl, ccConsentHome.next);
+  ccConsentHome = null;
+}
+
+function ccOpenConsole() {
+  if (!ccRoot || ccOpen || !ccAvailable()) return;
+  ccOpen = true;
+  ccReturnFocus = stewardBadge || null;
+  ccRoot.hidden = false;
+  ccRoot.removeAttribute("inert");
+  document.documentElement.classList.add("has-console");
+  ccOpenKey?.setAttribute("aria-expanded", "true");
+  ccConsentBorrow();
+  ccWatches = ccReadWatches();
+  ccSetMood("calm");
+  ccRenderRail();
+  ccRenderHead();
+  ccPromptCaretShow(true);
+  if (ccLogEl) ccLogEl.textContent = "";
+  ccPhase("idle");
+  ccScan(false);
+  ccBoot();
+  ccInput?.focus({ preventScroll: true });
+  ccSyncPrompt();
+}
+
+function ccClose(returnFocus = true) {
+  if (!ccRoot || !ccOpen) return;
+  ccOpen = false;
+  ccClearBoot();
+  ccFinishReveal();
+  ccPaletteClose();
+  ccModePending = null;
+  ccAskMirror = null;
+  stewardConsentCancel(false);
+  ccConsentReturn();
+  ccRoot.setAttribute("inert", "");
+  ccRoot.hidden = true;
+  document.documentElement.classList.remove("has-console");
+  ccOpenKey?.setAttribute("aria-expanded", "false");
+  ccBusy = false;
+  ccScan(false);
+  if (returnFocus) (ccReturnFocus || stewardBadge)?.focus({ preventScroll: true });
+  ccReturnFocus = null;
+}
+
+/* ---- the keyboard sheet ---- */
+
+function ccTrapTab(event) {
+  const focusable = [...ccRoot.querySelectorAll("button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex='-1'])")]
+    .filter((node) => !node.hidden && node.offsetParent !== null);
+  if (focusable.length === 0) return;
+  event.preventDefault();
+  const at = focusable.indexOf(document.activeElement);
+  const next = focusable[((at < 0 ? 0 : at) + (event.shiftKey ? -1 : 1) + focusable.length) % focusable.length];
+  next.focus({ preventScroll: true });
+}
+
+function ccKeydown(event) {
+  if (!ccOpen) return;
+  /* the consent panel answers its own keys */
+  if (stewardConsentPending) return;
+
+  if (event.key === "Escape") {
+    event.stopPropagation();
+    event.preventDefault();
+    if (ccPaletteOpen) ccPaletteClose();
+    else ccClose(true);
+    return;
+  }
+
+  /* any key ends the boot cadence, and any key finishes a reveal */
+  const skipped = ccBootSkip();
+  const modifier = event.ctrlKey || event.metaKey || event.altKey;
+  if (!modifier && event.key !== "Shift" && ccFinishReveal()) {
+    /* the reveal is done; the key still does its own job below */
+  }
+
+  if ((event.ctrlKey || event.metaKey) && ccLower(event.key) === "k") {
+    event.preventDefault();
+    event.stopPropagation();
+    if (ccPaletteOpen) ccPaletteClose();
+    else ccPaletteShow();
+    ccInput?.focus({ preventScroll: true });
+    return;
+  }
+
+  if ((event.ctrlKey || event.metaKey) && ccLower(event.key) === "l") {
+    event.preventDefault();
+    event.stopPropagation();
+    if (ccLogEl) ccLogEl.textContent = "";
+    /* /back is phase 2 — the line says so rather than implying a restore */
+    ccSystemLine(CC_BACK_STUB);
+    ccInput?.focus({ preventScroll: true });
+    return;
+  }
+
+  if (event.key === "Tab") {
+    if (document.activeElement === ccInput && !event.shiftKey) {
+      const hits = ccPaletteMatches(ccInput.value);
+      const typed = ccLower(ccInput.value).trim();
+      const exact = typed.startsWith("/") ? CC_PALETTE.filter((entry) => entry.cmd.startsWith(typed.split(/\s+/)[0])) : [];
+      event.preventDefault();
+      event.stopPropagation();
+      if (exact.length === 1) {
+        ccInput.value = `${exact[0].cmd} `;
+        /* the palette is the ambiguous case's affordance; a completion has just
+           removed the ambiguity, so it gets out of the way */
+        ccPaletteClose();
+        ccSyncPrompt();
+      } else {
+        ccPaletteShow();
+        ccPaletteRows = hits;
+        ccPaletteRender();
+      }
+      return;
+    }
+    event.stopPropagation();
+    ccTrapTab(event);
+    return;
+  }
+
+  if (event.key === "ArrowRight" && document.activeElement === ccInput) {
+    const ghost = ccGhostEl?.textContent || "";
+    if (ghost && ccInput.selectionStart === ccInput.value.length) {
+      event.preventDefault();
+      ccInput.value += ghost;
+      ccSyncPrompt();
+    }
+    return;
+  }
+
+  if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+    if (ccPaletteOpen) {
+      event.preventDefault();
+      ccPaletteMove(event.key === "ArrowUp" ? -1 : 1);
+      return;
+    }
+    if (document.activeElement === ccInput) {
+      event.preventDefault();
+      ccRecall(event.key === "ArrowUp" ? 1 : -1);
+    }
+    return;
+  }
+
+  if (event.key === "Enter" && document.activeElement === ccInput) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (ccPaletteOpen && ccPaletteAt >= 0) {
+      ccPaletteInsert(ccPaletteAt);
+      return;
+    }
+    ccSubmit(ccInput.value);
+    return;
+  }
+
+  if (skipped) return;
+}
+
+function setupConsole() {
+  if (!ccRoot || !ccOpenKey) return;
+  ccHistory = ccReadHistory();
+  ccWatches = ccReadWatches();
+  ccSyncAvailability();
+  window.addEventListener("resize", () => {
+    ccSyncAvailability();
+    if (ccOpen && !ccAvailable()) ccClose(true);
+  });
+
+  ccOpenKey.setAttribute("aria-expanded", "false");
+  ccOpenKey.addEventListener("click", ccOpenConsole);
+
+  ccRoot.addEventListener("keydown", ccKeydown);
+  ccPromptForm?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    ccSubmit(ccInput?.value);
+  });
+  ccInput?.addEventListener("input", () => {
+    ccHistoryAt = -1;
+    if (ccInput.value.startsWith("/") && !ccPaletteOpen) ccPaletteShow();
+    if (!ccInput.value.startsWith("/") && ccPaletteOpen) ccPaletteClose();
+    ccSyncPrompt();
+  });
+  ccInput?.addEventListener("click", ccSyncPrompt);
+  ccInput?.addEventListener("keyup", ccSyncPrompt);
+
+  /* a click in the log finishes a reveal and hands the caret back — unless the
+     click was a selection, which is a reader's gesture and stays a reader's */
+  ccLogEl?.addEventListener("click", () => {
+    ccFinishReveal();
+    const selection = window.getSelection?.();
+    if (selection && !selection.isCollapsed) return;
+    ccInput?.focus({ preventScroll: true });
+  });
+
+  ccRenderRail();
+  ccRenderHead();
+}
+
 refreshButton.addEventListener("click", () => loadBrief({ announce: true }));
 
 setupTheme();
 setupSteward();
+setupConsole();
 loadBrief();
