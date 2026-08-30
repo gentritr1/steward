@@ -2693,7 +2693,9 @@ function stewardBindHold(key, target) {
 function stewardStatusLine() {
   const disk = diskState(stewardData.latest);
   const free = `${stewardGb(disk.available, 0)} gb free`;
-  const engine = STEWARD_ENGINE_WORDS.get(stewardMode) || "local";
+  /* auto is a decision, not a provider, so it is not in the provider table —
+     it is named here, where the fact being reported is which mode is armed */
+  const engine = stewardMode === "auto" ? "auto" : STEWARD_ENGINE_WORDS.get(stewardMode) || "local";
   const count = validSnapshots(stewardData.history).length;
   /* below two readings there is no "since last" to report — the baseline is the news */
   if (count < 2) return `${free} · ${engine} · ${count === 0 ? "no readings yet" : "baseline set"}`;
@@ -2870,11 +2872,39 @@ const STEWARD_RECEIPT_UNAVAILABLE = "unavailable";
 const STEWARD_RECEIPT_ANSWERED = "local answered";
 const STEWARD_RECEIPT_MODEL_MAX = 24;
 
-/* the word line while a cloud call is in flight — he says where it went */
+/* the word line while a cloud call is in flight — he says where it went. auto
+   cannot name a destination before the server has chosen one, so it names the
+   rule instead, and the receipt says where the turn actually went. */
 const STEWARD_ASK_CLOUD_LINES = {
   openai: "asking openai. nothing else leaves.",
   anthropic: "asking claude. nothing else leaves.",
+  auto: "picking an engine. only a consented one.",
 };
+
+/* ---- the auto receipt ----
+
+   The route arrives as a server stamp and is never trusted as text: it is
+   looked up in this table, and a route word the client does not know gets the
+   ordinary receipt instead of an invented one. The reasons are the same — a
+   machine string in, a code-owned phrase out, so no server prose is ever
+   rendered as an explanation of where a question went. */
+const STEWARD_ROUTE_WORDS = new Map([
+  ["local", "local"],
+  ["openai", "openai"],
+  ["claude", "claude"],
+]);
+
+const STEWARD_ROUTE_REASONS = new Map([
+  ["known-intent", "known brief question"],
+  ["unknown-intent", "no local answer for it"],
+  ["no-consent", "no cloud consent stored"],
+  ["no-cloud", "no cloud key configured"],
+]);
+
+/* every cost on this surface is estimated from a configured rate card, so it
+   carries the inferred mark. it is never written without one. */
+const STEWARD_COST_MARK = "~";
+const STEWARD_COST_FLOOR = 0.0001;
 
 /* every answer carries its own mark in the gutter — measured included. The mark
    is the epistemic state made visible, so there is no unmarked case to guess at.
@@ -3155,6 +3185,39 @@ function stewardReceiptBasis(envelope, verb) {
   return `${count} id${count === 1 ? "" : "s"} ${verb}`;
 }
 
+/* the reason slot · a machine string in, one of four code-owned phrases out.
+   an unrecognised reason renders nothing rather than something plausible. */
+function stewardRouteReason(routeReason) {
+  const family = String(routeReason || "").split(":")[0];
+  return STEWARD_ROUTE_REASONS.get(family) || "";
+}
+
+/* the cost slot · always marked inferred, because it always is: it is tokens
+   the provider reported multiplied by a rate card the server was configured
+   with, and neither this deck nor the server has ever seen a bill. */
+function stewardReceiptCost(estCostUsd) {
+  if (typeof estCostUsd !== "number" || !Number.isFinite(estCostUsd) || estCostUsd <= 0) return "";
+  if (estCostUsd < STEWARD_COST_FLOOR) return `${STEWARD_COST_MARK}under $${STEWARD_COST_FLOOR}`;
+  return `${STEWARD_COST_MARK}$${estCostUsd.toFixed(4)}`;
+}
+
+/* an auto turn opens with where it went and why, and then reads exactly like
+   any other receipt. the arrow is the one piece of punctuation in the line:
+   it is the routing, and it is the whole reason this mode exists. */
+function stewardAutoEngineSlot(envelope, fell) {
+  const word = STEWARD_ROUTE_WORDS.get(String(envelope?.route || ""));
+  if (!word) return "";
+  if (word === "local") return "auto → local";
+  /* a fallback is stamped with the model that WROTE the sentence, which is the
+     local one — so the cloud model is not named here. the route it tried is,
+     and the word after it is the disclosure. */
+  if (fell) return `auto → ${word} ${STEWARD_RECEIPT_UNAVAILABLE}`;
+  const model = String(envelope?.model || "").trim().slice(0, STEWARD_RECEIPT_MODEL_MAX);
+  /* the resolved engine, and the model the server says answered — never a
+     nickname this file invented for it */
+  return model ? `auto → ${word} ${model}` : `auto → ${word}`;
+}
+
 /* the receipt is a privacy claim, so every part of it is either a code-owned
    string or the server's own model stamp written as text. An envelope that
    names a provider this table does not know gets no receipt at all. */
@@ -3166,7 +3229,20 @@ function stewardReceiptLine(turn, envelope, { elapsed = 0, requested = "local" }
   const fell = envelope?.fallbackUsed === true;
 
   let receipt;
-  if (fell) {
+  const autoSlot = requested === "auto" ? stewardAutoEngineSlot(envelope, fell) : "";
+  if (autoSlot) {
+    /* an auto turn that fell back still says so, in the slot that already
+       carries that disclosure — the route it tried is in the engine slot */
+    const local = envelope?.route === "local";
+    receipt = [
+      autoSlot,
+      fell ? STEWARD_RECEIPT_ANSWERED : stewardRouteReason(envelope?.routeReason),
+      stewardReceiptCost(envelope?.estCostUsd),
+      stewardReceiptBasis(envelope, local || fell ? "cited" : "sent"),
+      local || fell ? STEWARD_RECEIPT_SCOPE_LOCAL : STEWARD_RECEIPT_SCOPE_CLOUD,
+      time,
+    ].filter(Boolean).join(" · ");
+  } else if (fell) {
     /* the requested engine is ours to name: the envelope is stamped with
        whoever actually answered, which is exactly the thing being disclosed */
     const asked = STEWARD_ENGINE_WORDS.get(requested) || engine;
@@ -3321,15 +3397,24 @@ const STEWARD_CONSENT_KEYS = {
 
 const STEWARD_MODES = [
   { mode: "local", label: "LOCAL" },
+  { mode: "auto", label: "AUTO" },
   { mode: "openai", label: "OPENAI" },
   { mode: "anthropic", label: "CLAUDE" },
 ];
 const STEWARD_CLOUD_MODES = new Set(["openai", "anthropic"]);
+/* the two modes that are always selectable and never ask for anything: local
+   sends nothing, and auto sends only where consent has ALREADY been given —
+   which is why choosing it is not itself a decision to send. */
+const STEWARD_LOCAL_MODES = new Set(["local", "auto"]);
 const STEWARD_PROVIDER_NAMES = { openai: "OpenAI", anthropic: "Anthropic" };
 const STEWARD_MODE_UNAVAILABLE = "no api key configured";
 const STEWARD_MODE_LABEL_PREFIX = "answer mode · ";
 const STEWARD_MODE_NOTES = {
   local: "on device",
+  /* two notes, because the row has two truths: with nothing consented it is
+     local every time, and saying so is better than implying a choice */
+  auto: "picks the engine",
+  autoLocal: "local until consented",
   consented: "key set",
   asks: "asks first",
   keyless: "no key",
@@ -3394,8 +3479,15 @@ function stewardConsentGranted(mode) {
 }
 
 function stewardProviderReady(mode) {
-  if (mode === "local") return true;
+  /* auto needs no key: with none configured it is local, every time */
+  if (STEWARD_LOCAL_MODES.has(mode)) return true;
   return Boolean(stewardProviders && stewardProviders[mode] === true);
+}
+
+/* is there a cloud engine auto could actually reach? both gates, the same two
+   the server checks: a key this server has, and consent stored here. */
+function stewardAutoCanReachCloud() {
+  return [...STEWARD_CLOUD_MODES].some((mode) => stewardProviderReady(mode) && stewardConsentGranted(mode));
 }
 
 /* ---- the chip and its picker ----
@@ -3417,6 +3509,9 @@ function stewardModeLabel(mode) {
    still explains itself instead of just being dim */
 function stewardModeNote(mode) {
   if (mode === "local") return STEWARD_MODE_NOTES.local;
+  if (mode === "auto") {
+    return stewardAutoCanReachCloud() ? STEWARD_MODE_NOTES.auto : STEWARD_MODE_NOTES.autoLocal;
+  }
   if (!stewardProviderReady(mode)) return STEWARD_MODE_NOTES.keyless;
   return stewardConsentGranted(mode) ? STEWARD_MODE_NOTES.consented : STEWARD_MODE_NOTES.asks;
 }
@@ -3431,6 +3526,9 @@ function stewardChipState() {
   if (stewardChipFallback) return "fallback";
   const anyCloud = [...STEWARD_CLOUD_MODES].some((mode) => stewardProviderReady(mode));
   if (!anyCloud) return "no-key";
+  /* auto reads as local until a cloud engine is genuinely reachable — the chip
+     must not imply a send that consent has not authorised */
+  if (stewardMode === "auto") return stewardAutoCanReachCloud() ? "cloud" : "local";
   return stewardMode === "local" ? "local" : "cloud";
 }
 
@@ -3545,9 +3643,11 @@ function stewardModeMove(step) {
 function stewardModeSelect(mode, key) {
   if (!mode || mode === stewardMode) return;
   if (!stewardProviderReady(mode)) return;
-  if (mode === "local") {
+  /* choosing auto opens no gate: it is a routing preference, and the consent
+     panel belongs to the moment a provider would actually be sent to */
+  if (STEWARD_LOCAL_MODES.has(mode)) {
     stewardConsentCancel(false);
-    stewardModeApply("local");
+    stewardModeApply(mode);
     return;
   }
   if (stewardConsentGranted(mode)) {
@@ -3625,9 +3725,13 @@ async function stewardModesCheck() {
     anthropic: payload.anthropic === true,
   };
   /* a stored cloud mode is honoured only when its consent is still stored and
-     the server still says it is configured — otherwise this opens on local */
+     the server still says it is configured — otherwise this opens on local.
+     a stored auto is honoured unconditionally: it needs no key and no consent,
+     and it re-checks both on every turn anyway. */
   const stored = stewardReadStore(STEWARD_MODE_KEY);
-  if (STEWARD_CLOUD_MODES.has(stored) && stewardProviderReady(stored) && stewardConsentGranted(stored)) {
+  if (stored === "auto") {
+    stewardMode = "auto";
+  } else if (STEWARD_CLOUD_MODES.has(stored) && stewardProviderReady(stored) && stewardConsentGranted(stored)) {
     stewardMode = stored;
   } else {
     stewardMode = "local";
@@ -3889,11 +3993,22 @@ async function stewardAsk(raw) {
   const elapsed = () => (typeof performance === "object" ? performance.now() : Date.now()) - started;
 
   try {
+    /* the body is exactly the fields the contract allows. auto adds one: the
+       consent this deck is holding, as booleans, because the server picks the
+       provider and must not be able to pick one that was never agreed to.
+       No other mode sends it — there is nothing for it to gate. */
+    const body = { message, mode };
+    if (mode === "auto") {
+      body.consent = {
+        openai: stewardConsentGranted("openai"),
+        anthropic: stewardConsentGranted("anthropic"),
+      };
+    }
+
     const response = await fetch("/api/assistant", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      /* the body is exactly the two fields the contract allows */
-      body: JSON.stringify({ message, mode }),
+      body: JSON.stringify(body),
       signal: controller.signal,
     });
 
@@ -5556,7 +5671,8 @@ function ccCmdMode(started, arg, line) {
     };
   }
 
-  if (entry.mode === "local" || stewardConsentGranted(entry.mode)) {
+  /* local and auto ask for nothing; a cloud engine opens the panel below */
+  if (STEWARD_LOCAL_MODES.has(entry.mode) || stewardConsentGranted(entry.mode)) {
     stewardModeApply(entry.mode);
     return {
       text: ccModeSuccessText(entry.mode),

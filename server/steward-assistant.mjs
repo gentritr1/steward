@@ -68,7 +68,12 @@ const INTENTS = [
   ])],
 ];
 
-function classify(message) {
+/* the five intents this file can answer from the packet alone. exported so the
+   router can ask the same question before it decides where a turn goes: a
+   question local code already answers deterministically must never buy tokens. */
+export const KNOWN_INTENTS = Object.freeze(INTENTS.map(([intent]) => intent));
+
+export function classifyIntent(message) {
   const text = typeof message === "string" ? message.toLowerCase() : "";
   for (const [intent, matcher] of INTENTS) {
     if (matcher.test(text)) return intent;
@@ -234,7 +239,7 @@ const ROUTES = {
  */
 export function answerLocal(request) {
   const packet = request?.packet ?? { evidence: {}, evidenceIds: [], reclaimItems: [] };
-  const intent = classify(request?.message);
+  const intent = classifyIntent(request?.message);
   const candidate = ROUTES[intent](packet);
 
   const result = validateEnvelope(candidate, {

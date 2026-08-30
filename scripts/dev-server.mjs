@@ -5,7 +5,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { buildEvidencePacket } from "../server/steward-context.mjs";
-import { MODES, answerWithProvider, providerAvailability } from "../server/providers/select-provider.mjs";
+import { AUTO_MODE, CLOUD_MODES, MODES, answerWithProvider, providerAvailability } from "../server/providers/select-provider.mjs";
+import { estimateCostUsd } from "../server/providers/pricing.mjs";
+import { routeWord } from "../server/providers/route-auto.mjs";
+import { appendUsage, summarizeLedger } from "../server/usage-ledger.mjs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const srcDir = path.join(projectRoot, "src");
@@ -98,7 +101,34 @@ function notFound(response) {
 const BODY_LIMIT_BYTES = 4096;
 const DRAIN_LIMIT_BYTES = BODY_LIMIT_BYTES * 8;
 const MESSAGE_MAX_LENGTH = 500;
-const BODY_KEYS = new Set(["message", "mode"]);
+const BODY_KEYS = new Set(["message", "mode", "consent"]);
+
+/* consent lives in the browser, because that is where it was given. AUTO is the
+   one mode that has to know it server-side — it picks the provider — so the
+   page states it per request, as booleans and nothing else. The shape is
+   checked as strictly as the rest of the body: unknown provider, or a value
+   that is not a boolean, is a bad request rather than a benefit of the doubt.
+   An absent map means no consent, which routes local. */
+function readConsent(value) {
+  if (value === undefined) return { ok: true, consent: {} };
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return { ok: false };
+  const consent = {};
+  for (const [name, granted] of Object.entries(value)) {
+    if (!CLOUD_MODES.includes(name) || typeof granted !== "boolean") return { ok: false };
+    consent[name] = granted;
+  }
+  return { ok: true, consent };
+}
+
+/* what the ledger is told about a candidate that reached the contract.
+   true  the answer returned satisfied the envelope contract.
+   false a provider's candidate was rejected by it, twice, and local answered.
+   null  there was no candidate to judge — an outage never produced one. */
+function contractVerdict(result) {
+  if (result.fallbackUsed !== true) return true;
+  if (result.fallbackReason === "invalid") return false;
+  return null;
+}
 
 function sendJson(response, status, payload) {
   const body = Buffer.from(JSON.stringify(payload), "utf8");
@@ -205,9 +235,23 @@ async function handleAssistant(request, response) {
     return;
   }
 
+  const consent = readConsent(parsed.consent);
+  if (!consent.ok) {
+    sendJson(response, 400, { error: "consent must map a known provider to a boolean" });
+    return;
+  }
+
   try {
     const packet = await buildEvidencePacket(dataDir);
-    const result = await answerWithProvider({ mode: parsed.mode, message: parsed.message, packet });
+    /* measured here, around the answer and nothing else — not read off a wire */
+    const started = performance.now();
+    const result = await answerWithProvider({
+      mode: parsed.mode,
+      message: parsed.message,
+      packet,
+      consent: consent.consent,
+    });
+    const latencyMs = Math.round(performance.now() - started);
 
     if (result.error === "not_configured") {
       sendJson(response, 501, { error: "provider not configured", provider: result.provider });
@@ -228,6 +272,52 @@ async function handleAssistant(request, response) {
       payload.requestedProvider = requestedProvider;
       payload.fallbackReason = fallbackReason;
     }
+
+    /* tokens belong to whoever was ASKED. on a fallback the answer is stamped
+       local — that is who wrote the sentence — but the tokens, and therefore
+       the price, belong to the cloud model that produced the candidate the
+       contract rejected. The ledger records the model that spent them. */
+    const billedModel = result.requestedModel ?? model;
+    /* the cost is inferred from a configured rate card, never measured, and it
+       is computed once — here — so the stamp on the answer and the line in the
+       ledger are the same number rather than two estimates of one. */
+    const estCostUsd = result.usage ? estimateCostUsd(billedModel, result.usage) : null;
+
+    /* the routing stamps ride only on an AUTO turn. an explicitly chosen mode
+       had no route to resolve, and stamping one would be an invented fact. */
+    if (parsed.mode === AUTO_MODE) {
+      payload.route = result.route ?? null;
+      payload.routeReason = result.routeReason ?? null;
+      payload.estCostUsd = estCostUsd;
+    }
+
+    /* the line is written before the reply goes out, so "it answered" and "it
+       was accounted for" cannot come apart under a client that reads the ledger
+       the instant it has the answer. It cannot fail the request: appendUsage
+       swallows everything and returns a boolean nobody is required to read.
+       AUTO is logged whichever way it routed — a local route is the routing
+       result that matters most, and it is the one that costs nothing. */
+    if (parsed.mode === AUTO_MODE || CLOUD_MODES.includes(parsed.mode)) {
+      await appendUsage({
+        traceId,
+        mode: parsed.mode,
+        route: result.route ?? routeWord(provider),
+        provider,
+        model: billedModel,
+        effort: result.effort ?? null,
+        tokensIn: result.usage?.inputTokens ?? null,
+        /* neither adapter reads a cached-token count today. null is "not
+           reported", which is not the same claim as zero. */
+        tokensCached: result.usage?.cachedTokens ?? null,
+        tokensOut: result.usage?.outputTokens ?? null,
+        latencyMs,
+        valid: contractVerdict(result),
+        fallbackUsed,
+        routeReason: result.routeReason ?? `explicit:${routeWord(parsed.mode) ?? parsed.mode}`,
+        estCostUsd,
+      });
+    }
+
     sendJson(response, 200, payload);
   } catch {
     /* never surface the reason: it would describe local files */
@@ -243,6 +333,23 @@ function handleProviders(request, response) {
     return;
   }
   sendJson(response, 200, providerAvailability());
+}
+
+/* what the assistant has spent, in aggregate and only in aggregate. the ledger
+   itself is never served, never listed, and has no route: this endpoint reads
+   it and returns counts, token totals and estimated dollars per route. Every
+   dollar here is inferred from a configured rate card — pricesAsOf says which —
+   and the UI is required to mark it `~` rather than measured. */
+async function handleUsage(request, response) {
+  if (request.method !== "GET") {
+    notFound(response);
+    return;
+  }
+  try {
+    sendJson(response, 200, await summarizeLedger());
+  } catch {
+    sendJson(response, 500, { error: "usage unavailable" });
+  }
 }
 
 /* the evidence packet exactly as an adapter would receive it, so "preview
@@ -270,12 +377,13 @@ async function handle(request, response) {
     return;
   }
 
-  /* the api surface is three exact routes; everything else under /api/ is a
+  /* the api surface is four exact routes; everything else under /api/ is a
      404, and the static rules below are left exactly as they were */
   if (pathname.startsWith("/api/")) {
     if (pathname === "/api/assistant") await handleAssistant(request, response);
     else if (pathname === "/api/assistant/providers") handleProviders(request, response);
     else if (pathname === "/api/assistant/context") await handleContext(request, response);
+    else if (pathname === "/api/assistant/usage") await handleUsage(request, response);
     else notFound(response);
     return;
   }

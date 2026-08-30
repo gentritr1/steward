@@ -27,28 +27,38 @@
 import { createHash, randomBytes } from "node:crypto";
 import os from "node:os";
 
-import { answerLocal } from "../steward-assistant.mjs";
+import { answerLocal, classifyIntent } from "../steward-assistant.mjs";
 import { buildEvidencePacket } from "../steward-context.mjs";
 import { validateEnvelope } from "../steward-contract.mjs";
 import { STEWARD_DEVELOPER_PROMPT } from "../steward-prompt.mjs";
 import * as anthropic from "./anthropic.mjs";
 import * as openai from "./openai.mjs";
 import { ProviderError } from "./provider-error.mjs";
+import { resolveRoute } from "./route-auto.mjs";
 
 const ADAPTERS = {
   anthropic: { module: anthropic, envKey: "ANTHROPIC_API_KEY" },
   openai: { module: openai, envKey: "OPENAI_API_KEY" },
 };
 
-export const CLOUD_MODES = Object.freeze(Object.keys(ADAPTERS));
-export const MODES = Object.freeze(["local", ...CLOUD_MODES]);
+/* the mode that is not a destination: it names the decision, and route-auto.mjs
+   makes it from deterministic signals before anything is sent */
+export const AUTO_MODE = "auto";
 
-/* the four fields the server stamps. a candidate that arrives carrying any of
-   them has that claim removed before validation — not honoured, and not treated
-   as a schema violation either, since the interesting question about such a
+export const CLOUD_MODES = Object.freeze(Object.keys(ADAPTERS));
+export const MODES = Object.freeze(["local", AUTO_MODE, ...CLOUD_MODES]);
+
+/* the fields the server stamps. a candidate that arrives carrying any of them
+   has that claim removed before validation — not honoured, and not treated as a
+   schema violation either, since the interesting question about such a
    candidate is whether its ANSWER is sound. every other unexpected property
-   still fails additionalProperties, exactly as before. */
-const STAMP_KEYS = ["provider", "model", "fallbackUsed", "traceId"];
+   still fails additionalProperties, exactly as before.
+
+   the three routing stamps are on this list for the same reason the first four
+   are: a model that names its own route, its own reason for being chosen, or
+   its own price is making a claim about the server's decision, and the server
+   made that decision before the model was asked. */
+const STAMP_KEYS = ["provider", "model", "fallbackUsed", "traceId", "route", "routeReason", "estCostUsd"];
 
 const LOCAL_PROVIDER = "local";
 const LOCAL_MODEL = "deterministic-v1";
@@ -140,12 +150,43 @@ async function resolvePacket(packet, dataDir) {
   return buildEvidencePacket(dataDir ?? "public/data");
 }
 
+/* ---- AUTO ----
+   The decision is made here, from signals only, and then the ordinary path
+   runs. Nothing about validation, fallback, or stamping changes: an AUTO turn
+   that lands on a provider is that provider's turn, held to the same contract.
+   What AUTO adds to the result is three facts about the decision — where it
+   went, why, and at what effort — so the receipt can say it. */
+async function answerAuto(request, message, packet) {
+  const decision = resolveRoute({
+    intent: classifyIntent(message),
+    providers: providerAvailability(),
+    /* absent consent is no consent. a provider the caller did not vouch for is
+       not reachable from AUTO, whatever key this process happens to hold. */
+    consent: request.consent,
+  });
+
+  const routing = {
+    route: decision.route,
+    routeReason: decision.routeReason,
+    effort: decision.effort,
+    requestedMode: AUTO_MODE,
+  };
+
+  if (decision.route === "local") return { ...answerLocal({ message, packet }), ...routing };
+
+  const result = await answerWithProvider({ ...request, mode: decision.provider, model: decision.model, packet });
+  /* an error result is passed back untouched: it is the caller's to report, and
+     decorating it with a route would dress a failure up as a decision */
+  return result?.error ? result : { ...result, ...routing };
+}
+
 /**
  * Answer one question through the requested provider.
  *
  * @param {{mode?: string, message: string, packet?: object, dataDir?: string,
  *          transports?: Record<string, typeof fetch>, signal?: AbortSignal,
- *          model?: string}} request
+ *          model?: string, consent?: Record<string, boolean>}} request
+ *   `consent` is read only in AUTO mode, and only as a gate.
  * @returns {Promise<object>} an answer with server stamps, or {error, provider}
  */
 export async function answerWithProvider(request = {}) {
@@ -154,6 +195,7 @@ export async function answerWithProvider(request = {}) {
   const packet = await resolvePacket(request.packet, request.dataDir);
 
   if (mode === LOCAL_PROVIDER) return answerLocal({ message, packet });
+  if (mode === AUTO_MODE) return answerAuto(request, message, packet);
 
   const entry = Object.hasOwn(ADAPTERS, mode) ? ADAPTERS[mode] : null;
   if (!entry) return { error: "unknown_mode", provider: mode };
@@ -189,6 +231,10 @@ export async function answerWithProvider(request = {}) {
      a candidate that did not validate. an outage is not retried here — it goes
      straight to the local answer rather than spending another 20 seconds. */
   let lastErrors = [];
+  /* a rejected candidate still cost tokens. the usage of the last attempt that
+     actually returned one travels with the fallback, so the ledger records the
+     spend instead of quietly writing it off. */
+  let lastUsage = null;
 
   for (let attempt = 1; attempt <= 2; attempt += 1) {
     let result;
@@ -224,6 +270,7 @@ export async function answerWithProvider(request = {}) {
       return fellBack(message, packet, mode, model, "outage");
     }
 
+    lastUsage = result.usage ?? lastUsage;
     const candidate = stripStamps(result.candidate);
     const validation = candidate === null
       ? { ok: false, errors: [`finish "${result.finish}" produced no parsable envelope`] }
@@ -249,5 +296,6 @@ export async function answerWithProvider(request = {}) {
      answer is the product's floor, and it is labelled as one. */
   const fallback = fellBack(message, packet, mode, model, "invalid");
   fallback.contractErrors = lastErrors;
+  fallback.usage = lastUsage;
   return fallback;
 }
