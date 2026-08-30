@@ -6551,11 +6551,17 @@ button.cc-more:focus-visible {
   color: var(--signal);
 }
 
+/* the field carries the input's own metrics, not the body's: the caret and the
+   ghost are positioned in `ch`, and a `ch` measured against 15.2px mono while
+   the text advances at 13px drifts the caret a character to the right every
+   eight or so typed. One size here, inherited by everything in the field. */
 .cc-field {
   position: relative;
   flex: 1 1 auto;
   min-width: 0;
   height: 18px;
+  font-size: 13px;
+  line-height: 18px;
 }
 
 .cc-input {
@@ -6702,20 +6708,22 @@ button.cc-more:focus-visible {
 }
 
 /* ---- one card ----
-   Deck material: a 1px rule around it, and a 2px left rule in the hue of what
-   it is. Lime for anything read off the collector's own file, violet for an
-   unpacking — the same violet the simulated marker uses in the log gutter. */
+   A flat deck slab on the well — no outline, no left accent; the 10px gap in
+   the stack is the only separation a card needs, and the step from --well to
+   --deck is the only edge. What a card is gets said in its tag rather than
+   drawn around it: lime for anything read off the collector's own file, violet
+   for an unpacking — the same violet the simulated marker uses in the log
+   gutter. Both hues are pulled 15% toward the theme's own ink so 9px uppercase
+   clears 4.5:1 on --deck in both shifts — measured off the rendered pixels:
+   night 12.24 lime / 7.55 violet, day 4.82 / 7.99. The mix is oklab, not
+   oklch: an oklch mix rotates hue toward the ink and turns the day lime green
+   by 70%, where oklab drops chroma and holds the hue inside 1°. Untouched, the
+   day lime is #6f8f14 on white — 3.74:1, under the gate. */
 
 .cc-card {
   flex: none;
-  border: 1px solid var(--rule);
-  border-left: 2px solid var(--signal);
   background: var(--deck);
-  padding: 9px 10px 10px;
-}
-
-.cc-card[data-kind="why"] {
-  border-left-color: var(--violet);
+  padding: 10px 12px 11px;
 }
 
 .cc-card-tag {
@@ -6723,7 +6731,11 @@ button.cc-more:focus-visible {
   font-size: 9px;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: color-mix(in oklch, var(--slate) 70%, transparent);
+  color: color-mix(in oklab, var(--signal) 85%, var(--text));
+}
+
+.cc-card[data-kind="why"] .cc-card-tag {
+  color: color-mix(in oklab, var(--violet) 85%, var(--text));
 }
 
 .cc-card-title {
