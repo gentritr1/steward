@@ -86,6 +86,14 @@
           <div data-steward-shell-body></div>
           <div class="steward-convo" data-steward-convo>
             <div class="steward-convo-log" data-steward-log></div>
+            <!-- the mode strip and the consent panel stay hidden until the server
+                 says it can offer more than local — an older server keeps the
+                 deck exactly as it was -->
+            <div class="steward-modes" data-steward-modes hidden>
+              <span class="steward-modes-label mono-label" id="steward-mode-label">mode</span>
+              <div class="steward-mode-keys" role="radiogroup" aria-labelledby="steward-mode-label" data-steward-mode-keys></div>
+            </div>
+            <div class="steward-consent" data-steward-consent hidden></div>
             <form class="steward-prompt" data-steward-prompt novalidate>
               <span class="steward-prompt-mark" aria-hidden="true">▸</span>
               <label class="sr-only" for="steward-ask-input">Ask Steward</label>

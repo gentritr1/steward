@@ -2816,8 +2816,11 @@ html.has-js [data-reveal].is-in .comp-seg {
   gap: 10px;
 }
 
+/* the row stretches its single child so seven cards with different title
+   lengths still end on the same baseline — the copy stays top-aligned */
 .lesson-ladder li {
   position: relative;
+  display: grid;
 }
 
 .lesson-ladder button,
@@ -2826,6 +2829,7 @@ html.has-js [data-reveal].is-in .comp-seg {
   gap: 10px;
   align-items: flex-start;
   width: 100%;
+  height: 100%;
   text-align: left;
   background: var(--deck);
   border: 1px solid var(--rule);
@@ -4484,6 +4488,24 @@ p.timeline-details {
   color: var(--text-3);
 }
 
+/* the affordance line · shown once per session, under the candidates.
+   Opacity only, so reduced motion needs no exception for it. */
+.steward-hint {
+  margin: 6px 0 0;
+  color: var(--amber);
+  line-height: 1.45;
+  animation: steward-fade-in 180ms var(--ease-entrance) both;
+}
+
+@keyframes steward-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 .steward-shell-delta {
   color: var(--signal);
 }
@@ -4575,6 +4597,141 @@ p.timeline-details {
   margin: 5px 0 0;
 }
 
+/* ---- the mode strip ----
+   Three keycaps in a radiogroup, sitting above the prompt row. Hidden entirely
+   when the server has no providers endpoint to answer with. */
+
+.steward-modes {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid color-mix(in oklch, var(--rule) 55%, transparent);
+}
+
+.steward-modes[hidden] {
+  display: none;
+}
+
+.steward-modes-label {
+  flex: none;
+  font-size: 0.5rem;
+  color: var(--text-3);
+}
+
+.steward-mode-keys {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.steward-mode-key[aria-checked="true"] {
+  color: var(--signal);
+  border-color: var(--signal);
+}
+
+/* the dim is the whole message: no key, no mode — the title says why */
+.steward-mode-key[disabled] {
+  opacity: 0.35;
+}
+
+/* ---- the consent gate ----
+   A panel in the deck's own material, not a browser dialog: the words have to
+   be read in the same place the choice is made. */
+
+.steward-consent {
+  flex: none;
+}
+
+.steward-consent[hidden] {
+  display: none;
+}
+
+/* the shell is a fixed box, so the panel takes the column while the question is
+   open: the brief and the log step aside rather than push the choice out of
+   view, and anything still too tall scrolls inside the panel itself */
+.steward-shell-inner.is-consenting .steward-shell-panel,
+.steward-shell-inner.is-consenting .steward-convo-log {
+  display: none;
+}
+
+.steward-consent-panel {
+  display: grid;
+  gap: 6px;
+  max-height: min(360px, 46vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin-top: 8px;
+  padding: 8px;
+  background: var(--deck);
+  border: 1px solid var(--amber);
+  border-radius: var(--r-sm);
+  animation: steward-fade-in 180ms var(--ease-entrance) both;
+}
+
+.steward-consent-panel p {
+  margin: 0;
+}
+
+.steward-consent-head {
+  font-size: 0.55rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--amber);
+}
+
+.steward-consent-provider {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.steward-consent-line {
+  color: var(--text-2);
+  line-height: 1.45;
+}
+
+.steward-consent-retention {
+  font-size: 0.58rem;
+  line-height: 1.45;
+  color: var(--text-3);
+}
+
+/* the packet, as text, in its own scroller — nothing here is interpreted */
+.steward-consent-well {
+  max-height: 108px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px;
+  background: var(--well);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-xs);
+  font-size: 0.55rem;
+  line-height: 1.5;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+.steward-consent-well[hidden] {
+  display: none;
+}
+
+.steward-consent-row {
+  margin: 0;
+}
+
+.steward-consent-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.steward-consent-allow[aria-disabled="true"],
+.steward-consent-allow[disabled] {
+  opacity: 0.45;
+}
+
 .steward-prompt {
   display: flex;
   flex: none;
@@ -4657,6 +4814,12 @@ p.timeline-details {
 
 .steward-dock[data-expression="concerned"] {
   --eye-h: 7px;
+  --eye-color: var(--amber);
+}
+
+/* the fallback read · the preview pose's amber, on the eyes only. No envelope
+   can request it; the client sets it when a cloud ask came back local. */
+.steward-dock[data-expression="fallback"] {
   --eye-color: var(--amber);
 }
 

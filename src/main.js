@@ -2445,6 +2445,54 @@ function stewardSyncShellHolds() {
   });
 }
 
+/* ---- the hold affordance ----
+
+   The keycap says "hold" and nothing on it says the gesture wants 640ms of
+   stillness. The title carries that for a cursor; the first shell of the
+   session carries it in words for everyone else. Keyboard activation files
+   instantly, so the line says so rather than teaching a gesture the keyboard
+   never performs. Session-scoped on purpose: a module flag, nothing stored. */
+
+const STEWARD_HOLD_TITLE = "press and hold to file it for review";
+const STEWARD_HOLD_HINT = "▸ press and hold a HOLD key to file it — release early to cancel (enter files instantly)";
+
+let stewardHintDone = false;
+let stewardHintOn = false;
+
+/* the panel is rebuilt on every refresh, so the node is re-mounted rather than
+   remembered — one owner for the markup, one flag for whether it belongs there */
+function stewardHintMount() {
+  if (!stewardHintOn || !stewardShellBody) return;
+  if (stewardShellBody.querySelector(".steward-hint")) return;
+  const panel = stewardShellBody.querySelector(".steward-shell-panel");
+  if (!panel) return;
+  const hint = document.createElement("p");
+  hint.className = "steward-hint";
+  hint.textContent = STEWARD_HOLD_HINT;
+  const anchor = panel.querySelector(".steward-shell-list") || panel.querySelector(".steward-shell-empty");
+  if (anchor) anchor.after(hint);
+  else panel.appendChild(hint);
+
+  /* the panel is a short scroller on small screens, and a hint below its fold
+     teaches nobody. Only the panel's own scrollTop moves — never the page. */
+  const overflow = hint.getBoundingClientRect().bottom - panel.getBoundingClientRect().bottom;
+  if (overflow > 0) panel.scrollTop += overflow;
+}
+
+function stewardHintShow() {
+  if (stewardHintDone || stewardHintOn) return;
+  stewardHintOn = true;
+  stewardHintMount();
+}
+
+/* shown once, dismissed for good: the first filed hold or the first close ends it */
+function stewardHintDismiss() {
+  if (!stewardHintOn && stewardHintDone) return;
+  stewardHintDone = true;
+  stewardHintOn = false;
+  stewardShellBody?.querySelector(".steward-hint")?.remove();
+}
+
 /* ---- press and hold · the fill is the charge ----
 
    Pointer-only ceremony. The fill is a ::before scaleX under a 640ms linear
@@ -2532,12 +2580,15 @@ function stewardChargeRelease(key) {
   const refuses = target?.dataset.reviewRisk === "review";
   target?.click();
   stewardSyncHold(key, target);
+  /* the gesture has been performed — the words have done their job */
+  stewardHintDismiss();
   if (!refuses) stewardStamp(key);
 }
 
 function stewardHoldInstant(key, target) {
   target?.click();
   stewardSyncHold(key, target);
+  stewardHintDismiss();
 }
 
 function stewardBindHold(key, target) {
@@ -2588,7 +2639,7 @@ function stewardRenderShell() {
                 <span class="steward-shell-name" title="${escapeHtml(label)}">${escapeHtml(label)}</span>
                 <span class="steward-shell-size">${formatBytes(item?.bytes)}</span>
                 <span class="steward-shell-actions">
-                  <button class="steward-key" type="button" data-steward-hold="${escapeHtml(id)}" aria-pressed="false" aria-label="Hold ${escapeHtml(label)} for review"><span data-hold-label>hold</span></button>
+                  <button class="steward-key" type="button" data-steward-hold="${escapeHtml(id)}" aria-pressed="false" title="${STEWARD_HOLD_TITLE}" aria-label="Hold ${escapeHtml(label)} for review"><span data-hold-label>hold</span></button>
                   <button class="steward-key" type="button" data-steward-show="${escapeHtml(id)}" aria-label="Show ${escapeHtml(label)} in the reclaim bay"><span>show me</span></button>
                 </span>
               </li>
@@ -2600,6 +2651,9 @@ function stewardRenderShell() {
       <p class="steward-shell-delta">▸ ${escapeHtml(delta)}</p>
     </div>
   `;
+
+  /* a refresh mid-shell rebuilds the panel; the hint outlives the markup it sat in */
+  stewardHintMount();
 
   /* fresh nodes each render — no listener or timer survives a refresh */
   stewardShellBody.querySelectorAll("[data-steward-hold]").forEach((key) => {
@@ -2638,6 +2692,8 @@ function stewardShellOpen() {
   stewardShellEl.removeAttribute("aria-hidden");
   stewardBadge?.setAttribute("aria-expanded", "true");
   stewardConvoCheck();
+  stewardModesCheck();
+  stewardHintShow();
   /* the panel is only clipped, never visibility-hidden, so it can take focus at once */
   stewardShellEl.querySelector("button:not([disabled])")?.focus({ preventScroll: true });
 }
@@ -2645,6 +2701,10 @@ function stewardShellOpen() {
 function stewardShellClose(returnFocus = true) {
   if (!stewardShellEl || !stewardDock || !stewardShellOpenState) return;
   stewardChargeCancelAll();
+  /* a consent panel left open is a question with no one in front of it —
+     closing the shell answers it the safe way: no */
+  stewardConsentCancel(false);
+  stewardHintDismiss();
   stewardShellOpenState = false;
   const hadFocus = stewardShellEl.contains(document.activeElement);
   stewardDock.setAttribute("data-shell", "closed");
@@ -2673,10 +2733,26 @@ const STEWARD_ASK_MAX = 500;
 
 const STEWARD_ASK_FAILURE = "the local brief is still here. try again.";
 const STEWARD_ASK_OFFLINE = "assistant offline. the brief is the source of truth.";
+const STEWARD_ASK_UNCONFIGURED = "provider not configured. set the api key and restart the server.";
 
 /* provider → receipt. An unknown provider gets no receipt at all: the line is a
-   privacy claim, and a claim we cannot make from our own table is not made. */
-const STEWARD_RECEIPTS = new Map([["local", "local · nothing left this mac"]]);
+   privacy claim, and a claim we cannot make from our own table is not made.
+   The cloud rows are prefixes — the model comes off the envelope and is written
+   as text, never as a label the code trusts. */
+const STEWARD_RECEIPTS = new Map([
+  ["local", "local · nothing left this mac"],
+  ["openai", "openai"],
+  ["anthropic", "claude"],
+]);
+const STEWARD_RECEIPT_SENT = "sent redacted measurements";
+const STEWARD_RECEIPT_FALLBACK = " · cloud unavailable, local answered";
+const STEWARD_RECEIPT_MODEL_MAX = 40;
+
+/* the word line while a cloud call is in flight — he says where it went */
+const STEWARD_ASK_CLOUD_LINES = {
+  openai: "asking openai. nothing else leaves.",
+  anthropic: "asking claude. nothing else leaves.",
+};
 
 /* measured is the unmarked case — everything else says so in front of the words */
 const STEWARD_EPISTEMIC = {
@@ -2719,6 +2795,18 @@ function stewardExpress(expression) {
   if (!stewardDock || !STEWARD_EXPRESSIONS.has(expression)) return;
   clearTimeout(stewardExpressionTimer);
   stewardDock.setAttribute("data-expression", expression);
+  stewardExpressionTimer = setTimeout(() => {
+    stewardDock.removeAttribute("data-expression");
+  }, STEWARD_EXPRESSION_MS);
+}
+
+/* the fallback read is ours, not the server's — it is deliberately outside the
+   allowlist above so no envelope can ask for amber eyes it has not earned.
+   Same seven seconds, same timer, then the eyes go back to the telemetry. */
+function stewardExpressFallback() {
+  if (!stewardDock) return;
+  clearTimeout(stewardExpressionTimer);
+  stewardDock.setAttribute("data-expression", "fallback");
   stewardExpressionTimer = setTimeout(() => {
     stewardDock.removeAttribute("data-expression");
   }, STEWARD_EXPRESSION_MS);
@@ -2861,9 +2949,22 @@ function stewardReplyLine(turn, text, epistemicState) {
   stewardScrollLog();
 }
 
-function stewardReceiptLine(turn, provider) {
-  const receipt = typeof provider === "string" ? STEWARD_RECEIPTS.get(provider) : null;
-  if (!turn || !receipt) return;
+/* the receipt is a privacy claim, so every part of it is either a code-owned
+   string or the server's own model stamp written as text. An envelope that
+   names a provider this table does not know gets no receipt at all. */
+function stewardReceiptLine(turn, envelope) {
+  const provider = typeof envelope?.provider === "string" ? envelope.provider : "";
+  const base = STEWARD_RECEIPTS.get(provider);
+  if (!turn || !base) return;
+  let receipt = base;
+  if (provider !== "local") {
+    const model = String(envelope?.model || "").trim().slice(0, STEWARD_RECEIPT_MODEL_MAX);
+    receipt = model
+      ? `${base} · ${model} · ${STEWARD_RECEIPT_SENT}`
+      : `${base} · ${STEWARD_RECEIPT_SENT}`;
+  }
+  /* the fallback says so on whichever provider the envelope ended up stamped with */
+  if (envelope?.fallbackUsed === true) receipt += STEWARD_RECEIPT_FALLBACK;
   const line = document.createElement("p");
   line.className = "steward-receipt";
   line.textContent = receipt;
@@ -2887,6 +2988,349 @@ function stewardActionKey(turn, nextStep) {
   stewardScrollLog();
 }
 
+/* ---------- Steward · the provider mode strip and the consent gate ----------
+
+   Three rules hold this section together:
+   1. Local is the default, the fallback, and the only mode this deck will ever
+      select on its own. A stored cloud mode is only honoured when the stored
+      consent for that same provider is also present AND the server still says
+      the provider is configured.
+   2. Nothing is sent to a cloud provider until the user has read, in this
+      panel, exactly what leaves the machine — including the real packet, on
+      request, fetched from the server and rendered as text.
+   3. Every word in the panel is a constant in this file. The server supplies
+      booleans, ids and numbers; it never supplies a sentence about privacy. */
+
+const STEWARD_MODE_KEY = "steward.assistantMode";
+const STEWARD_CONSENT_KEYS = {
+  openai: "steward.consent.openai",
+  anthropic: "steward.consent.anthropic",
+};
+
+const STEWARD_MODES = [
+  { mode: "local", label: "LOCAL" },
+  { mode: "openai", label: "OPENAI" },
+  { mode: "anthropic", label: "CLAUDE" },
+];
+const STEWARD_CLOUD_MODES = new Set(["openai", "anthropic"]);
+const STEWARD_PROVIDER_NAMES = { openai: "OpenAI", anthropic: "Anthropic" };
+const STEWARD_MODE_UNAVAILABLE = "no api key configured";
+const STEWARD_MODE_LABEL_PREFIX = "answer mode · ";
+
+const STEWARD_CONSENT_HEAD = "▸ before this leaves the mac";
+const STEWARD_CONSENT_SENTENCE = {
+  openai: "questions and the redacted measurements below leave this mac and are sent to OpenAI.",
+  anthropic: "questions and the redacted measurements below leave this mac and are sent to Anthropic.",
+};
+const STEWARD_CONSENT_SCOPE = "no project names. no file paths. no fallback to another provider.";
+const STEWARD_CONSENT_RETENTION = {
+  openai: "openai says api data is not used for training by default; abuse-monitoring copies may persist up to 30 days.",
+  anthropic: "retention depends on the account's agreement with anthropic. not necessarily zero.",
+};
+const STEWARD_CONSENT_PREVIEW_KEY = "PREVIEW CONTEXT";
+const STEWARD_CONSENT_PREVIEW_BUSY = "READING…";
+const STEWARD_CONSENT_PREVIEW_FAIL = "context unavailable. nothing has been sent.";
+const STEWARD_CONSENT_PREVIEW_EMPTY = "the packet is empty right now.";
+const STEWARD_CONSENT_ALLOW = "ALLOW";
+const STEWARD_CONSENT_CANCEL = "CANCEL";
+const STEWARD_CONSENT_TIMEOUT_MS = 8000;
+const STEWARD_CONTEXT_MAX_ROWS = 120;
+
+const stewardShellInner = stewardDock?.querySelector(".steward-shell-inner");
+const stewardModesEl = stewardDock?.querySelector("[data-steward-modes]");
+const stewardModeKeysEl = stewardDock?.querySelector("[data-steward-mode-keys]");
+const stewardConsentEl = stewardDock?.querySelector("[data-steward-consent]");
+
+let stewardMode = "local";
+let stewardProviders = null;
+let stewardModesChecked = false;
+let stewardConsentPending = null;
+let stewardConsentReturnKey = null;
+
+function stewardConsentGranted(mode) {
+  const key = Object.hasOwn(STEWARD_CONSENT_KEYS, mode) ? STEWARD_CONSENT_KEYS[mode] : "";
+  return Boolean(key) && stewardReadStore(key) === "granted";
+}
+
+function stewardProviderReady(mode) {
+  if (mode === "local") return true;
+  return Boolean(stewardProviders && stewardProviders[mode] === true);
+}
+
+/* ---- the strip ---- */
+
+function stewardModeKeys() {
+  return stewardModeKeysEl ? [...stewardModeKeysEl.querySelectorAll("[data-steward-mode]")] : [];
+}
+
+function stewardModeSync() {
+  stewardModeKeys().forEach((key) => {
+    const selected = key.dataset.stewardMode === stewardMode;
+    key.setAttribute("aria-checked", String(selected));
+    /* roving tabindex — the group is one tab stop, arrows move inside it */
+    key.tabIndex = selected ? 0 : -1;
+  });
+}
+
+function stewardModeApply(mode) {
+  stewardMode = STEWARD_MODES.some((entry) => entry.mode === mode) ? mode : "local";
+  stewardWriteStore(STEWARD_MODE_KEY, stewardMode);
+  stewardModeSync();
+}
+
+function stewardModeMove(step) {
+  const keys = stewardModeKeys().filter((key) => !key.disabled);
+  if (keys.length === 0) return;
+  const at = keys.findIndex((key) => key.dataset.stewardMode === stewardMode);
+  const next = keys[((at < 0 ? 0 : at) + step + keys.length) % keys.length];
+  next.focus({ preventScroll: true });
+  stewardModeSelect(next.dataset.stewardMode, next);
+}
+
+/* the one door into a cloud mode: consent first, switch second */
+function stewardModeSelect(mode, key) {
+  if (!mode || mode === stewardMode) return;
+  if (!stewardProviderReady(mode)) return;
+  if (mode === "local") {
+    stewardConsentCancel(false);
+    stewardModeApply("local");
+    return;
+  }
+  if (stewardConsentGranted(mode)) {
+    stewardModeApply(mode);
+    return;
+  }
+  stewardConsentOpen(mode, key);
+}
+
+function stewardModesRender() {
+  if (!stewardModeKeysEl || !stewardModesEl) return;
+  stewardModeKeysEl.textContent = "";
+  STEWARD_MODES.forEach((entry) => {
+    const key = document.createElement("button");
+    key.type = "button";
+    key.className = "steward-key steward-mode-key";
+    key.dataset.stewardMode = entry.mode;
+    key.setAttribute("role", "radio");
+    key.setAttribute("aria-checked", "false");
+    key.setAttribute("aria-label", `${STEWARD_MODE_LABEL_PREFIX}${entry.label}`);
+    const label = document.createElement("span");
+    label.textContent = entry.label;
+    key.appendChild(label);
+    if (!stewardProviderReady(entry.mode)) {
+      key.disabled = true;
+      key.title = STEWARD_MODE_UNAVAILABLE;
+    }
+    key.addEventListener("click", () => stewardModeSelect(entry.mode, key));
+    key.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+        event.preventDefault();
+        stewardModeMove(1);
+      } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+        event.preventDefault();
+        stewardModeMove(-1);
+      }
+    });
+    stewardModeKeysEl.appendChild(key);
+  });
+  stewardModeSync();
+  stewardModesEl.hidden = false;
+}
+
+/* ---- feature detection · one request per session ----
+   No providers endpoint means an older server: the strip never appears and the
+   deck behaves exactly as it did before this existed. */
+async function stewardModesCheck() {
+  if (stewardModesChecked || !stewardModesEl || typeof fetch !== "function") return;
+  stewardModesChecked = true;
+  let payload = null;
+  try {
+    const response = await fetch("/api/assistant/providers", { headers: { Accept: "application/json" } });
+    if (!response.ok) return;
+    payload = await response.json();
+  } catch {
+    return;
+  }
+  if (!payload || typeof payload !== "object") return;
+  stewardProviders = {
+    local: true,
+    openai: payload.openai === true,
+    anthropic: payload.anthropic === true,
+  };
+  /* a stored cloud mode is honoured only when its consent is still stored and
+     the server still says it is configured — otherwise this opens on local */
+  const stored = stewardReadStore(STEWARD_MODE_KEY);
+  if (STEWARD_CLOUD_MODES.has(stored) && stewardProviderReady(stored) && stewardConsentGranted(stored)) {
+    stewardMode = stored;
+  } else {
+    stewardMode = "local";
+  }
+  stewardModesRender();
+}
+
+/* ---- the consent panel ---- */
+
+function stewardConsentRow(text, className) {
+  const line = document.createElement("p");
+  line.className = className;
+  line.textContent = text;
+  return line;
+}
+
+/* the packet is ids and numbers; it is flattened into one text row per leaf and
+   never interpreted, never used as markup, never used as a selector */
+function stewardContextRows(value, path = "", rows = []) {
+  if (rows.length >= STEWARD_CONTEXT_MAX_ROWS) return rows;
+  if (value === null || typeof value !== "object") {
+    rows.push(`${path || "value"} · ${String(value)}`);
+    return rows;
+  }
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => stewardContextRows(item, `${path}[${index}]`, rows));
+    return rows;
+  }
+  Object.keys(value).forEach((childKey) => {
+    stewardContextRows(value[childKey], path ? `${path}.${childKey}` : childKey, rows);
+  });
+  return rows;
+}
+
+async function stewardConsentPreview(button, well) {
+  if (button.disabled) return;
+  const label = button.querySelector("span") || button;
+  button.disabled = true;
+  label.textContent = STEWARD_CONSENT_PREVIEW_BUSY;
+  well.hidden = false;
+  well.textContent = "";
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), STEWARD_CONSENT_TIMEOUT_MS);
+  try {
+    const response = await fetch("/api/assistant/context", {
+      headers: { Accept: "application/json" },
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error("context");
+    const packet = await response.json();
+    const rows = stewardContextRows(packet);
+    if (rows.length === 0) {
+      well.textContent = STEWARD_CONSENT_PREVIEW_EMPTY;
+    } else {
+      rows.forEach((row) => {
+        const line = document.createElement("p");
+        line.className = "steward-consent-row";
+        line.textContent = row;
+        well.appendChild(line);
+      });
+    }
+  } catch {
+    well.textContent = STEWARD_CONSENT_PREVIEW_FAIL;
+  } finally {
+    clearTimeout(timer);
+    label.textContent = STEWARD_CONSENT_PREVIEW_KEY;
+    button.disabled = false;
+  }
+}
+
+function stewardConsentClose() {
+  if (!stewardConsentEl) return;
+  stewardConsentPending = null;
+  stewardConsentEl.textContent = "";
+  stewardConsentEl.hidden = true;
+  stewardShellInner?.classList.remove("is-consenting");
+}
+
+/* cancel leaves the previous mode exactly where it was — the strip is re-synced
+   from stewardMode rather than from whatever the user just pressed */
+function stewardConsentCancel(returnFocus = true) {
+  if (!stewardConsentPending) return;
+  const key = stewardConsentReturnKey;
+  stewardConsentReturnKey = null;
+  stewardConsentClose();
+  stewardModeSync();
+  if (returnFocus && key?.isConnected) key.focus({ preventScroll: true });
+}
+
+function stewardConsentAllow(mode) {
+  const storeKey = Object.hasOwn(STEWARD_CONSENT_KEYS, mode) ? STEWARD_CONSENT_KEYS[mode] : "";
+  if (storeKey) stewardWriteStore(storeKey, "granted");
+  stewardConsentReturnKey = null;
+  stewardConsentClose();
+  stewardModeApply(mode);
+  stewardInput?.focus({ preventScroll: true });
+}
+
+function stewardConsentOpen(mode, key) {
+  if (!stewardConsentEl || !Object.hasOwn(STEWARD_CONSENT_SENTENCE, mode)) return;
+  stewardConsentPending = mode;
+  stewardConsentReturnKey = key || null;
+  stewardConsentEl.textContent = "";
+  stewardConsentEl.hidden = false;
+  stewardShellInner?.classList.add("is-consenting");
+
+  const panel = document.createElement("div");
+  panel.className = "steward-consent-panel";
+  panel.setAttribute("role", "group");
+  panel.setAttribute("aria-label", `${STEWARD_PROVIDER_NAMES[mode]} — send data off this mac?`);
+
+  panel.appendChild(stewardConsentRow(STEWARD_CONSENT_HEAD, "steward-consent-head"));
+  panel.appendChild(stewardConsentRow(STEWARD_PROVIDER_NAMES[mode], "steward-consent-provider"));
+  panel.appendChild(stewardConsentRow(STEWARD_CONSENT_SENTENCE[mode], "steward-consent-line"));
+
+  const previewRow = document.createElement("p");
+  previewRow.className = "steward-consent-actions";
+  const preview = document.createElement("button");
+  preview.type = "button";
+  preview.className = "steward-key";
+  const previewLabel = document.createElement("span");
+  previewLabel.textContent = STEWARD_CONSENT_PREVIEW_KEY;
+  preview.appendChild(previewLabel);
+  previewRow.appendChild(preview);
+  panel.appendChild(previewRow);
+
+  const well = document.createElement("div");
+  well.className = "steward-consent-well";
+  well.hidden = true;
+  well.tabIndex = 0;
+  well.setAttribute("role", "region");
+  well.setAttribute("aria-label", "the packet that would be sent");
+  panel.appendChild(well);
+  preview.addEventListener("click", () => stewardConsentPreview(preview, well));
+
+  panel.appendChild(stewardConsentRow(STEWARD_CONSENT_SCOPE, "steward-consent-line"));
+  panel.appendChild(stewardConsentRow(STEWARD_CONSENT_RETENTION[mode], "steward-consent-retention"));
+
+  const actions = document.createElement("p");
+  actions.className = "steward-consent-actions";
+  const allow = document.createElement("button");
+  allow.type = "button";
+  allow.className = "steward-key steward-consent-allow";
+  const allowLabel = document.createElement("span");
+  allowLabel.textContent = STEWARD_CONSENT_ALLOW;
+  allow.appendChild(allowLabel);
+  allow.addEventListener("click", () => stewardConsentAllow(mode));
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.className = "steward-key";
+  const cancelLabel = document.createElement("span");
+  cancelLabel.textContent = STEWARD_CONSENT_CANCEL;
+  cancel.appendChild(cancelLabel);
+  cancel.addEventListener("click", () => stewardConsentCancel(true));
+  actions.append(allow, cancel);
+  panel.appendChild(actions);
+
+  /* Escape answers the question with no, and stops before the shell's own
+     Escape handler so one key press does not do two things */
+  panel.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    event.stopPropagation();
+    event.preventDefault();
+    stewardConsentCancel(true);
+  });
+
+  stewardConsentEl.appendChild(panel);
+  allow.focus({ preventScroll: true });
+}
+
 /* ---- the prompt row ---- */
 
 function stewardAskBusy(busy) {
@@ -2899,6 +3343,9 @@ function stewardAskBusy(busy) {
 function stewardAskGoOffline() {
   stewardAskOffline = true;
   stewardAskBusy(false);
+  /* with no endpoint there is nothing to route, so the mode strip goes too */
+  stewardConsentCancel(false);
+  if (stewardModesEl) stewardModesEl.hidden = true;
   if (!stewardPromptForm?.isConnected) return;
   const note = document.createElement("p");
   note.className = "steward-offline";
@@ -2920,11 +3367,14 @@ async function stewardAsk(raw) {
   if (!message) return;
 
   if (stewardInput) stewardInput.value = "";
+  /* the mode is read once, at send: a switch mid-flight cannot relabel this turn */
+  const mode = stewardProviderReady(stewardMode) ? stewardMode : "local";
   const turn = stewardOpenTurn(message);
   stewardAskInFlight = true;
   stewardAskBusy(true);
-  /* honest: a fetch really is in flight, and scanning is the state that says so */
-  stewardSet("scanning");
+  /* honest: a fetch really is in flight, and scanning is the state that says so.
+     On a cloud ask the word line names the destination instead of the default. */
+  stewardSet("scanning", Object.hasOwn(STEWARD_ASK_CLOUD_LINES, mode) ? STEWARD_ASK_CLOUD_LINES[mode] : "");
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), STEWARD_ASK_TIMEOUT_MS);
@@ -2935,11 +3385,16 @@ async function stewardAsk(raw) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       /* the body is exactly the two fields the contract allows */
-      body: JSON.stringify({ message, mode: "local" }),
+      body: JSON.stringify({ message, mode }),
       signal: controller.signal,
     });
 
-    if (response.status === 501 || response.status === 404) {
+    if (response.status === 501 && mode !== "local") {
+      /* the key is missing, not the assistant — say which, and fall back to the
+         only mode that never needed a key */
+      stewardReplyLine(turn, STEWARD_ASK_UNCONFIGURED, "unavailable");
+      stewardModeApply("local");
+    } else if (response.status === 501 || response.status === 404) {
       offline = true;
       stewardReplyLine(turn, STEWARD_ASK_OFFLINE, "unavailable");
     } else if (!response.ok) {
@@ -2951,9 +3406,12 @@ async function stewardAsk(raw) {
         stewardReplyLine(turn, STEWARD_ASK_FAILURE, "unavailable");
       } else {
         stewardReplyLine(turn, text, envelope.epistemicState);
-        stewardReceiptLine(turn, envelope.provider);
+        stewardReceiptLine(turn, envelope);
         stewardActionKey(turn, envelope.nextStep);
         stewardExpress(envelope?.presentation?.expression);
+        /* the honesty cue wins the eyes: a cloud ask that came back local is
+           the one thing the character should not look calm about */
+        if (envelope?.fallbackUsed === true) stewardExpressFallback();
       }
     }
   } catch {
