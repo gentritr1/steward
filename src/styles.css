@@ -5872,6 +5872,10 @@ p.timeline-details {
   --cc-cps: 38;
   --cc-rail: 186px;
   --cc-spine: 30px;
+  /* the open spine, exactly as the kit specifies it. The log column is the
+     grid's only flexible track, so this width is taken from the log and the
+     log reflows — nothing in the console ever overlaps. */
+  --cc-spine-open: 262px;
 }
 
 /* the door · it rides beside the shell's two tabs */
@@ -5999,6 +6003,14 @@ html.has-console body {
   display: grid;
   grid-template-columns: var(--cc-rail) minmax(0, 1fr) var(--cc-spine);
   min-height: 0;
+  transition: grid-template-columns 180ms cubic-bezier(0.2, 0.9, 0.2, 1);
+}
+
+/* the spine's whole geometry is this one line: the third track grows, the
+   middle track gives up exactly that much, and every child reflows because it
+   was already sized from its track rather than from the viewport */
+.cold-console[data-spine="open"] .cc-body {
+  grid-template-columns: var(--cc-rail) minmax(0, 1fr) var(--cc-spine-open);
 }
 
 /* ---- the rail ---- */
@@ -6275,10 +6287,13 @@ html.has-console body {
 }
 
 .cc-turn-extra {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   margin: 6px 0 0 20px;
 }
 
-.cc-turn-extra .cc-hold {
+.cc-turn-extra .steward-key {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -6286,6 +6301,12 @@ html.has-console body {
   min-height: 0;
   padding: 0 12px;
   border-color: var(--slate);
+}
+
+/* a turn that does not match the /find term is dimmed, never hidden: the log
+   is a record, and a filter that deletes rows is a filter you cannot check */
+.cc-turn.is-dim {
+  opacity: 0.35;
 }
 
 .cc-receipt {
@@ -6437,14 +6458,31 @@ html.has-console body {
   color: var(--plasma);
 }
 
-/* phase 2 · this line is where /find will pick up. Until then it is dim and
-   inert, and it never draws itself as something you can press. */
+/* the overflow line is live now: it opens the rest of the deltas in the spine.
+   It stays dim — the rows it hides are the small ones — but it is a button, so
+   it takes a caret, a hover and a focus ring like every other control. */
 .cc-more {
+  display: block;
   margin: 6px 0 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: inherit;
   font-size: 10px;
   letter-spacing: 0.06em;
+  text-align: left;
   color: color-mix(in oklch, var(--slate) 55%, transparent);
   opacity: 0;
+}
+
+button.cc-more {
+  cursor: pointer;
+}
+
+button.cc-more:hover,
+button.cc-more:focus-visible {
+  color: var(--text-2);
+  text-decoration: underline;
 }
 
 /* ---- the palette ---- */
@@ -6565,24 +6603,237 @@ html.has-console body {
   display: none;
 }
 
-/* ---- the spine · phase 2 ---- */
+/* ---- the evidence spine ----
+
+   Closed it is a wordmark in a 30px gutter and takes no pointer events at all —
+   there is nothing to hover, because hovering is not one of the two gestures
+   that may open it. Open it is a 262px column of cards, and the only control
+   inside it closes it again. */
 
 .cc-spine {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: var(--cc-spine);
+  min-width: 0;
   border-left: 1px solid var(--rule);
   background: var(--well);
+  overflow: hidden;
+}
+
+.cc-spine[aria-hidden="true"] {
   pointer-events: none;
 }
 
-.cc-spine span {
+.cc-spine-word {
+  margin: 0;
   writing-mode: vertical-rl;
   font-size: 9px;
   letter-spacing: 0.22em;
   text-transform: lowercase;
   color: color-mix(in oklch, var(--slate) 50%, transparent);
+}
+
+.cold-console[data-spine="open"] .cc-spine {
+  align-items: stretch;
+}
+
+.cold-console[data-spine="open"] .cc-spine-word {
+  display: none;
+}
+
+.cc-spine-pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  width: var(--cc-spine-open);
+  padding: 12px 12px 10px;
+}
+
+.cc-spine-pane[hidden] {
+  display: none;
+}
+
+.cc-spine-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.cc-spine-title {
+  margin: 0;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--slate);
+}
+
+.cc-spine-close {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--rule);
+  background: transparent;
+  color: var(--slate);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.cc-spine-close:hover {
+  color: var(--text);
+  border-color: var(--slate);
+}
+
+.cc-spine-stack {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  padding-top: 10px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* ---- one card ----
+   Deck material: a 1px rule around it, and a 2px left rule in the hue of what
+   it is. Lime for anything read off the collector's own file, violet for an
+   unpacking — the same violet the simulated marker uses in the log gutter. */
+
+.cc-card {
+  flex: none;
+  border: 1px solid var(--rule);
+  border-left: 2px solid var(--signal);
+  background: var(--deck);
+  padding: 9px 10px 10px;
+}
+
+.cc-card[data-kind="why"] {
+  border-left-color: var(--violet);
+}
+
+.cc-card-tag {
+  margin: 0 0 5px;
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: color-mix(in oklch, var(--slate) 70%, transparent);
+}
+
+.cc-card-title {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  color: var(--text);
+}
+
+.cc-card-sub {
+  margin: 3px 0 0;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--slate);
+}
+
+.cc-card-rows {
+  margin-top: 8px;
+}
+
+.cc-card-row {
+  display: grid;
+  grid-template-columns: minmax(0, 88px) minmax(0, 1fr);
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  padding: 3px 0;
+  font-size: 10px;
+  line-height: 1.4;
+  border-bottom: 1px solid color-mix(in oklch, var(--rule) 55%, transparent);
+}
+
+.cc-card-row:last-child {
+  border-bottom: 0;
+}
+
+.cc-card-key {
+  color: var(--slate);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cc-card-val {
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+/* the meta rows — method, samples, gaps — and the not-measured foot are the
+   card's own hedging, so they read one step quieter than the readings */
+.cc-card-row[data-dim="true"] .cc-card-val,
+.cc-card-foot {
+  color: var(--slate);
+}
+
+.cc-card-row[data-dim="true"] {
+  border-bottom-color: transparent;
+}
+
+.cc-card-meta {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid color-mix(in oklch, var(--rule) 55%, transparent);
+}
+
+.cc-card-foot {
+  margin: 8px 0 0;
+  font-size: 9px;
+  line-height: 1.45;
+  letter-spacing: 0.04em;
+  overflow-wrap: anywhere;
+}
+
+.cc-card-keys {
+  margin-top: 9px;
+}
+
+.cc-card-keys .steward-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 24px;
+  min-height: 0;
+  padding: 0 12px;
+  border-color: var(--slate);
+}
+
+/* the local-only line · once per session, at the foot of the column */
+.cc-spine-foot {
+  flex: none;
+  margin: 10px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--rule);
+  font-size: 9px;
+  line-height: 1.5;
+  color: var(--slate);
+}
+
+.cc-spine-foot[hidden] {
+  display: none;
+}
+
+/* a card arrives from above, because a new card pushes the standing one down */
+.cc-card {
+  animation: cc-card-in 200ms cubic-bezier(0.2, 0.9, 0.2, 1) both;
+}
+
+@keyframes cc-card-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: none; }
 }
 
 /* ---- reduced motion ----
@@ -6609,6 +6860,16 @@ html.has-console body {
   .cc-watch[data-state="amber"] .cc-dot {
     animation: none;
     box-shadow: 0 0 6px var(--amber);
+  }
+
+  /* the spine changes width without sliding, and a card arrives already
+     standing — the state change is the information, not the travel */
+  .cc-body {
+    transition: none;
+  }
+
+  .cc-card {
+    animation: none;
   }
 }
 

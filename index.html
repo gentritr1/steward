@@ -207,7 +207,7 @@
       </div>
     </div>
 
-    <!-- tier 4 · the cold console (kit "Terminal Spaces v2", phase 1).
+    <!-- tier 4 · the cold console (kit "Terminal Spaces v2", phases 1–2).
          A full-viewport surface in the deck's own material. It hides the page
          rather than destroying it: the dashboard is still mounted underneath,
          and `esc` hands the page straight back. -->
@@ -283,9 +283,28 @@
           </form>
         </div>
 
-        <!-- phase 2 · the evidence spine. Collapsed to its wordmark and inert
-             until /why, /find and /back exist to fill it. -->
-        <div class="cc-spine" aria-hidden="true"><span>spine · phase 2</span></div>
+        <!-- the evidence spine · 30px closed, 262px open. It opens for exactly
+             two gestures — a SHOW ME key or /why — and never on hover, never
+             because an answer looked important. Closed it is a wordmark and
+             nothing else, so it is hidden from the tree; open it carries a
+             close control, which is why aria-hidden is toggled rather than
+             pinned. -->
+        <aside class="cc-spine" data-cc-spine aria-label="Evidence spine" aria-hidden="true">
+          <p class="cc-spine-word" data-cc-spine-word aria-hidden="true"><span>spine</span></p>
+          <div class="cc-spine-pane" data-cc-spine-pane hidden>
+            <header class="cc-spine-head">
+              <p class="cc-spine-title">evidence</p>
+              <button
+                class="cc-spine-close"
+                data-cc-spine-close
+                type="button"
+                aria-label="Collapse the evidence spine"
+              >×</button>
+            </header>
+            <div class="cc-spine-stack" data-cc-spine-stack></div>
+            <p class="cc-spine-foot" data-cc-spine-foot hidden></p>
+          </div>
+        </aside>
       </div>
     </div>
 

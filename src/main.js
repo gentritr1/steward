@@ -3921,6 +3921,9 @@ async function stewardAsk(raw) {
         /* the keycap sits under the answer; the receipt closes the turn */
         stewardActionKey(turn, envelope.nextStep);
         stewardReceiptLine(turn, envelope, { elapsed: elapsed(), requested: mode });
+        /* the console's /why unpacks this turn, so the mirror is handed the
+           envelope's own citation list — not a copy of the envelope */
+        ccAskMirror?.envelope?.(envelope);
         stewardExpress(envelope?.presentation?.expression);
         /* what he knows outranks what he was told to look like: an inferred or
            unavailable answer sets its own read, on the eyes only */
@@ -4198,7 +4201,7 @@ function setupSteward() {
   stewardArmIdle();
 }
 
-/* ---------- Steward · the cold console (kit "Terminal Spaces v2" · phase 1) ----------
+/* ---------- Steward · the cold console (kit "Terminal Spaces v2" · phases 1–2) ----------
 
    A full-viewport surface, not a bigger shell. Every slash command is executed
    here, on this machine, against the snapshot the deck already loaded — no
@@ -4210,8 +4213,13 @@ function setupSteward() {
    lands in the shell log too. Slash output is console-only — it has no
    envelope, so there is nothing honest to put in a shell receipt.
 
-   The evidence spine and /why, /find, /back are phase 2. Where the kit reaches
-   for them this file stubs them in words rather than pretending.            */
+   Phase 2 adds the evidence spine and the three commands that fill or search
+   the log: /why unpacks the previous turn, /find dims what does not match, and
+   /back is the undo for ctrl+L. The spine opens for exactly two gestures — a
+   SHOW ME key or /why — and every row in every card is a field that already
+   exists in the loaded data or in the evidence packet. Nothing in a card is
+   inferred, and a field the collector does not record is named as missing
+   rather than left out.                                                     */
 
 const CC_BOOT_MS = 160;
 const CC_CPS_FALLBACK = 38;
@@ -4228,6 +4236,11 @@ const CC_COVERAGE_CELLS = 8;
 const CC_GHOST_MIN = 2;
 const CC_ANSWER_WORDS = 12;
 const CC_AMBER_DELTA = GIB;
+/* two cards, and the third pushes the oldest out. The stack is short on
+   purpose: a spine you have to scroll is a second log, not a margin. */
+const CC_SPINE_MAX = 2;
+const CC_SPINE_ROWS = 10;
+const CC_CONTEXT_MS = 4000;
 
 const CC_HISTORY_KEY = "steward.cmdHistory";
 const CC_WATCH_KEY = "steward.watches";
@@ -4238,6 +4251,12 @@ const CC_QUIET_KEY = "steward.quietUntil";
 const CC_PALETTE = [
   { cmd: "/status", note: "what he can see right now" },
   { cmd: "/diff", note: "what moved · 24h 7d 30d" },
+  /* the kit lists /find and /back for this table. /why is listed with them
+     because the table IS the command set — a command missing from it would be
+     uncompletable by Tab and uncounted by the miss receipt. */
+  { cmd: "/why", note: "unpack the last answer" },
+  { cmd: "/find", note: "filter scrollback" },
+  { cmd: "/back", note: "restore a cleared scrollback" },
   { cmd: "/watch", note: "pin a category to the rail" },
   { cmd: "/lesson", note: "the next unlogged lesson" },
   { cmd: "/mode", note: "which engine answers" },
@@ -4255,7 +4274,31 @@ const CC_DIFF_DEFAULT = "7d";
 const CC_REFUSE_DELETE = "i don't delete. i can file them for review.";
 const CC_DELETE_VERBS = /\b(delete|remove|clean|cleans|cleanup|wipe|erase|purge|nuke|rm)\b/i;
 
-const CC_BACK_STUB = "cleared. /back will restore this in a future update.";
+/* ctrl+L clears the screen, not the memory — and the line says exactly that,
+   because /back is what makes it true */
+const CC_CLEAR_LINE = "cleared. /back restores it — the log never left memory.";
+
+/* the spine's one standing claim, printed once per session at its foot */
+const CC_SPINE_LOCAL_ONLY = "real paths appear here because this pane reads local data locally. only cloud payloads are redacted.";
+
+/* fields a reclaim card would like to show and the collector has never
+   written. The list is checked against the item rather than assumed, so the
+   day a collector starts recording one of these the row shrinks by itself. */
+const CC_RECLAIM_UNRECORDED = [
+  { key: "lastOpenedAt", word: "last opened" },
+  { key: "fileCount", word: "file count" },
+  { key: "duplicateBytes", word: "duplicate copies" },
+  { key: "backedUp", word: "backup state" },
+];
+
+/* the reclaim card renders the item's real fields, in this order, and skips
+   any the item does not carry. Nothing here is invented or defaulted. */
+const CC_RECLAIM_FIELDS = [
+  { key: "scope", label: "path" },
+  { key: "evidence", label: "evidence" },
+  { key: "rebuildCost", label: "rebuild" },
+  { key: "reversibility", label: "reversible" },
+];
 
 const ccRoot = document.querySelector("[data-console]");
 const ccOpenKey = document.querySelector("[data-console-open]");
@@ -4273,6 +4316,11 @@ const ccWaitingListEl = ccRoot?.querySelector("[data-cc-waiting-list]");
 const ccWaitingCountEl = ccRoot?.querySelector("[data-cc-waiting-count]");
 const ccFaceEl = ccRoot?.querySelector("[data-cc-face]");
 const ccMoodEl = ccRoot?.querySelector("[data-cc-mood]");
+const ccSpineEl = ccRoot?.querySelector("[data-cc-spine]");
+const ccSpinePane = ccRoot?.querySelector("[data-cc-spine-pane]");
+const ccSpineStack = ccRoot?.querySelector("[data-cc-spine-stack]");
+const ccSpineFootEl = ccRoot?.querySelector("[data-cc-spine-foot]");
+const ccSpineCloseKey = ccRoot?.querySelector("[data-cc-spine-close]");
 
 let ccOpen = false;
 let ccBusy = false;
@@ -4291,6 +4339,16 @@ let ccAskMirror = null;
 let ccModePending = null;
 let ccConsentHome = null;
 let ccReturnFocus = null;
+let ccSpineOpen = false;
+let ccSpineCards = [];
+/* once per session, not once per open: the claim is about this pane, and the
+   pane does not become a different pane because it was collapsed */
+let ccSpineLocalDone = false;
+/* what the previous turn stood on. /why reads it; /why never replaces it. */
+let ccWhySource = null;
+let ccFilter = "";
+/* ctrl+L moves nodes here rather than destroying them, oldest first */
+let ccCleared = [];
 
 function ccIsOpen() {
   return ccOpen;
@@ -4570,7 +4628,7 @@ function ccFinishReveal() {
 
 /* ---- one turn ---- */
 
-function ccPrintTurn({ you, text, mark = "measured", receipt = "", instrument = null, extra = null, mood = "calm", started = ccNow() }) {
+function ccPrintTurn({ you, text, mark = "measured", receipt = "", instrument = null, extra = null, showMe = null, more = null, mood = "calm", started = ccNow() }) {
   if (!ccLogEl) return;
   /* the clock closes here — once the answer, the receipt slots and the
      instruments have all been built, not partway through them */
@@ -4601,6 +4659,8 @@ function ccPrintTurn({ you, text, mark = "measured", receipt = "", instrument = 
   turn.appendChild(reply);
 
   ccLogEl.appendChild(turn);
+  /* a turn printed while a /find filter stands is filtered like every other */
+  ccApplyFilter();
   ccScrollLog();
 
   const land = () => {
@@ -4608,10 +4668,14 @@ function ccPrintTurn({ you, text, mark = "measured", receipt = "", instrument = 
     /* the answer is user-initiated, so it announces even inside a quiet window */
     if (liveRegion) liveRegion.textContent = text;
     const tail = () => {
-      if (extra) {
+      /* the keycaps under a turn: whatever the command handed over, plus the
+         SHOW ME key if this turn references an item the spine can draw */
+      const keys = Array.isArray(extra) ? extra.filter(Boolean) : (extra ? [extra] : []);
+      if (showMe) keys.push(ccShowMeKey(showMe.build, showMe.label));
+      if (keys.length > 0) {
         const row = document.createElement("p");
         row.className = "cc-turn-extra";
-        row.appendChild(extra);
+        keys.forEach((key) => row.appendChild(key));
         turn.appendChild(row);
       }
       if (receiptLine) {
@@ -4629,7 +4693,12 @@ function ccPrintTurn({ you, text, mark = "measured", receipt = "", instrument = 
            nothing left to start them. */
         void instrument.offsetWidth;
         instrument.classList.add("is-lit");
+        /* the overflow line opens the rows it hides — the one control inside an
+           instrument, and it opens the spine like any other SHOW ME gesture */
+        const moreKey = more ? instrument.querySelector("[data-cc-more]") : null;
+        moreKey?.addEventListener("click", () => ccSpinePush(ccWhyCard(more)));
       }
+      ccApplyFilter();
       ccScrollLog();
       ccBusy = false;
       ccPhase("idle");
@@ -4682,12 +4751,382 @@ function ccTableBlock(rows, offset) {
       <span class="cc-cell-delta mono-num" data-dir="${row.delta > 0 ? "up" : row.delta < 0 ? "down" : "flat"}">${escapeHtml(row.delta === 0 ? "0" : `${row.delta > 0 ? "+" : "−"}${ccGb(Math.abs(row.delta), 2)}`)}</span>
     </div>
   `).join("");
-  /* phase-2 spine hook: the overflow line is where /find will pick up. Until it
-     exists the line is dim and does nothing — it never pretends to be a link. */
+  /* the overflow line is live: it opens the rows it is hiding in the spine.
+     It is a button rather than a styled paragraph, so it is reachable by Tab
+     and announces itself as something that can be pressed. */
   const tail = more > 0
-    ? `<p class="cc-more" style="--k:${offset + shown.length}">+ ${more} more</p>`
+    ? `<button class="cc-more" type="button" data-cc-more style="--k:${offset + shown.length}">+ ${more} more</button>`
     : "";
   return `<div class="cc-table" style="--sd:${CC_INST_STAGGER_MS}ms">${body}${tail}</div>`;
+}
+
+/* ---- the evidence spine ----
+
+   30px closed, 262px open, and the width lives in one grid line so the log
+   column reflows rather than being overlapped. It opens for a SHOW ME key,
+   for /why, and for nothing else: not on hover, not on focus, and never
+   because a command decided its own answer looked important. */
+
+function ccSpineSet(open) {
+  if (!ccSpineEl || !ccSpinePane) return;
+  ccSpineOpen = Boolean(open);
+  ccRoot?.setAttribute("data-spine", ccSpineOpen ? "open" : "closed");
+  ccSpinePane.hidden = !ccSpineOpen;
+  /* closed, the column is a wordmark with nothing to reach; open, it holds a
+     close control, and a focusable node inside aria-hidden is a trap */
+  if (ccSpineOpen) ccSpineEl.removeAttribute("aria-hidden");
+  else ccSpineEl.setAttribute("aria-hidden", "true");
+  /* the local-only line is said once and then it has been said: collapsing
+     takes it down, and the flag keeps the next open from repeating it */
+  if (!ccSpineOpen && ccSpineFootEl) {
+    ccSpineFootEl.hidden = true;
+    ccSpineFootEl.textContent = "";
+  }
+}
+
+function ccSpineClose() {
+  if (!ccSpineOpen) return;
+  ccSpineSet(false);
+  ccInput?.focus({ preventScroll: true });
+}
+
+function ccSpineReset() {
+  ccSpineCards = [];
+  ccSpineSet(false);
+  if (ccSpineStack) ccSpineStack.textContent = "";
+}
+
+function ccCardRow(parent, label, value, dim = false) {
+  const row = document.createElement("p");
+  row.className = "cc-card-row";
+  if (dim) row.dataset.dim = "true";
+  const key = document.createElement("span");
+  key.className = "cc-card-key";
+  key.textContent = label;
+  const body = document.createElement("span");
+  body.className = "cc-card-val";
+  body.textContent = value;
+  body.title = value;
+  row.append(key, body);
+  parent.appendChild(row);
+}
+
+/* the hold keycap on a reclaim card drives the deck's own review control, so
+   the card and the storage panel can never disagree about what is filed */
+function ccCardHold(item) {
+  const id = String(item?.id || "");
+  const target = stewardReviewButton(id);
+  if (!id || !target) return null;
+  const key = document.createElement("button");
+  key.type = "button";
+  key.className = "steward-key cc-hold";
+  key.dataset.stewardHold = id;
+  key.setAttribute("aria-pressed", "false");
+  key.title = STEWARD_HOLD_TITLE;
+  key.setAttribute("aria-label", `Hold ${item?.label || id} for review`);
+  const label = document.createElement("span");
+  label.dataset.holdLabel = "";
+  label.textContent = "hold";
+  key.appendChild(label);
+  stewardSyncHold(key, target);
+  stewardBindHold(key, target);
+  return key;
+}
+
+function ccRenderCard(card, index) {
+  const node = document.createElement("article");
+  node.className = "cc-card";
+  node.dataset.kind = card.kind;
+
+  const tag = document.createElement("p");
+  tag.className = "cc-card-tag";
+  tag.textContent = index === 0 ? "newest" : "pinned";
+  node.appendChild(tag);
+
+  const title = document.createElement("p");
+  title.className = "cc-card-title";
+  title.textContent = card.title;
+  node.appendChild(title);
+
+  if (card.sub) {
+    const sub = document.createElement("p");
+    sub.className = "cc-card-sub";
+    sub.textContent = card.sub;
+    node.appendChild(sub);
+  }
+
+  if (card.rows.length > 0) {
+    const rows = document.createElement("div");
+    rows.className = "cc-card-rows";
+    card.rows.slice(0, CC_SPINE_ROWS).forEach((row) => ccCardRow(rows, row.label, row.value, row.dim));
+    node.appendChild(rows);
+  }
+
+  if (card.meta.length > 0) {
+    const meta = document.createElement("div");
+    meta.className = "cc-card-rows cc-card-meta";
+    card.meta.forEach((row) => ccCardRow(meta, row.label, row.value, true));
+    node.appendChild(meta);
+  }
+
+  if (card.foot) {
+    const foot = document.createElement("p");
+    foot.className = "cc-card-foot";
+    foot.textContent = card.foot;
+    node.appendChild(foot);
+  }
+
+  const hold = card.item ? ccCardHold(card.item) : null;
+  if (hold) {
+    const keys = document.createElement("div");
+    keys.className = "cc-card-keys";
+    keys.appendChild(hold);
+    node.appendChild(keys);
+  }
+
+  return node;
+}
+
+function ccSpineRender() {
+  if (!ccSpineStack) return;
+  ccSpineStack.textContent = "";
+  ccSpineCards.forEach((card, index) => ccSpineStack.appendChild(ccRenderCard(card, index)));
+}
+
+function ccSpineFoot() {
+  if (!ccSpineFootEl || ccSpineLocalDone) return;
+  ccSpineLocalDone = true;
+  ccSpineFootEl.textContent = CC_SPINE_LOCAL_ONLY;
+  ccSpineFootEl.hidden = false;
+}
+
+/* the one way in. A card pushed here opens the spine; nothing else does. */
+function ccSpinePush(card) {
+  if (!card || !ccSpineStack) return;
+  ccSpineCards.unshift(card);
+  while (ccSpineCards.length > CC_SPINE_MAX) ccSpineCards.pop();
+  ccSpineSet(true);
+  ccSpineFoot();
+  ccSpineRender();
+  /* a card that has to read the context endpoint stands with its pending row
+     and fills itself in place — as long as it has not been pushed out since */
+  if (typeof card.fill === "function") {
+    const fill = card.fill;
+    card.fill = null;
+    Promise.resolve(fill(card)).finally(() => {
+      if (ccSpineCards.includes(card)) ccSpineRender();
+    });
+  }
+}
+
+function ccCard({ kind, title, sub = "", rows = [], meta = [], foot = "", item = null, fill = null }) {
+  return { kind, title, sub, rows, meta, foot, item, fill };
+}
+
+/* ---- the reclaim card ----
+   Every row is a field the collector actually wrote for this item. The fields
+   it never writes are named in the foot: a card that simply omitted them would
+   read as though nobody had wanted them. */
+
+function ccReclaimCard(item) {
+  if (!item) return null;
+  const risk = safeToken(item?.risk, ["safe", "rebuildable", "low", "medium", "high", "review"], "review");
+  const rows = [
+    { label: "size", value: formatBytes(item?.bytes).toLowerCase() },
+    { label: "risk", value: risk },
+  ];
+  CC_RECLAIM_FIELDS.forEach((field) => {
+    const value = String(item?.[field.key] ?? "").trim();
+    if (value) rows.push({ label: field.label, value });
+  });
+  const missing = CC_RECLAIM_UNRECORDED
+    .filter((field) => !Object.hasOwn(item, field.key))
+    .map((field) => field.word);
+  return ccCard({
+    kind: "reclaim",
+    title: ccLower(item?.label || item?.id || "reclaim item"),
+    sub: `reclaim · ${String(item?.id || "")}`,
+    rows,
+    foot: missing.length ? `not measured · ${missing.join(" · ")}` : "",
+    item,
+  });
+}
+
+/* ---- the lesson card ---- */
+
+function ccLessonCard(lesson, number, total) {
+  if (!lesson) return null;
+  const rows = [{ label: "position", value: `lesson ${number} of ${total}` }];
+  const takeaway = String(lesson?.takeaway ?? "").trim();
+  if (takeaway) rows.push({ label: "takeaway", value: takeaway });
+  const minutes = Math.max(1, Math.round(numberOr(lesson?.readMinutes, 4)));
+  rows.push({ label: "read", value: `${minutes} minutes` });
+  return ccCard({
+    kind: "lesson",
+    title: ccLower(lesson?.title || lesson?.id || "untitled"),
+    sub: `lesson · ${String(lesson?.id || "")}`,
+    rows,
+  });
+}
+
+/* ---- the why card ----
+
+   The same four parts every time: the rows the answer stood on, the method
+   that produced them, the sample count where one is derivable, and the gaps.
+   "none" is a real answer for the last one; silence is not. */
+
+/* a turn that measured nothing still has a why: the honest one, which says so.
+   Silence here would read as "the evidence is elsewhere". */
+function ccWhyGeneric(line, gaps = "this command reported no measurement") {
+  return {
+    title: line,
+    sub: "console state",
+    rows: [],
+    method: "nothing measured",
+    samples: "",
+    gaps,
+  };
+}
+
+function ccWhyMeta(source) {
+  return [
+    { label: "method", value: source.method },
+    { label: "samples", value: source.samples || "not derivable" },
+    { label: "gaps", value: source.gaps || "none" },
+  ];
+}
+
+function ccWhyCard(source) {
+  if (!source) return null;
+  if (source.kind === "envelope") return ccWhyEnvelopeCard(source);
+  return ccCard({
+    kind: "why",
+    title: source.title,
+    sub: source.sub || "the previous turn",
+    rows: source.rows || [],
+    meta: ccWhyMeta(source),
+  });
+}
+
+/* the packet is re-read now rather than remembered from the answer: this pane
+   never keeps a copy of what left the machine, and the row says which reading
+   it is looking at so the two cannot be confused */
+async function ccContextPacket() {
+  if (typeof fetch !== "function") throw new Error("no fetch");
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), CC_CONTEXT_MS);
+  try {
+    const response = await fetch("/api/assistant/context", {
+      headers: { Accept: "application/json" },
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error("context");
+    return await response.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function ccEvidenceValue(entry) {
+  const value = numberOr(entry?.value, NaN);
+  if (!Number.isFinite(value)) return String(entry?.value ?? "");
+  if (entry?.unit === "bytes") return formatBytes(value).toLowerCase();
+  if (entry?.unit === "percent") return `${value}%`;
+  if (entry?.unit === "days") return `${value} days`;
+  return String(value);
+}
+
+function ccWhyEnvelopeCard(source) {
+  const card = ccCard({
+    kind: "why",
+    title: source.title,
+    sub: source.sub,
+    rows: [{ label: "reading", value: "/api/assistant/context…", dim: true }],
+    meta: ccWhyMeta({ method: source.method, samples: "", gaps: "" }),
+    fill: async (target) => {
+      try {
+        const packet = await ccContextPacket();
+        const evidence = packet?.evidence && typeof packet.evidence === "object" ? packet.evidence : {};
+        const cited = arrayOr(source.ids).filter((id) => typeof id === "string");
+        const missing = cited.filter((id) => !Object.hasOwn(evidence, id));
+        target.rows = cited.map((id) => (Object.hasOwn(evidence, id)
+          ? { label: id, value: ccEvidenceValue(evidence[id]) }
+          : { label: id, value: "not in the packet", dim: true }));
+        const samples = [];
+        if (Object.hasOwn(evidence, "history.readingCount")) {
+          samples.push(`${evidence["history.readingCount"].value} readings`);
+        }
+        if (Object.hasOwn(evidence, "reclaim.itemCount")) {
+          samples.push(`${evidence["reclaim.itemCount"].value} reclaim items`);
+        }
+        target.meta = ccWhyMeta({
+          method: source.method,
+          samples: samples.join(" · "),
+          gaps: cited.length === 0
+            ? "no ids cited"
+            : missing.length > 0
+              ? `${missing.length} cited id${missing.length === 1 ? "" : "s"} absent now · ${missing.join(", ")}`
+              : "none",
+        });
+        target.foot = `packet re-read at ${formatClock(packet?.generatedAt)} — this is a fresh read, not the copy the answer was given.`;
+      } catch {
+        target.rows = [{ label: "reading", value: "context endpoint did not answer", dim: true }];
+        target.meta = ccWhyMeta({
+          method: source.method,
+          samples: "",
+          gaps: `${arrayOr(source.ids).length} cited ids could not be resolved`,
+        });
+      }
+    },
+  });
+  return card;
+}
+
+/* ---- the SHOW ME key ----
+   The one gesture that opens the spine from the log. It appears only on turns
+   that already reference a real item — a lesson, or the reclaim candidate the
+   refusal offered — so it never promises evidence a turn does not have. */
+
+function ccShowMeKey(build, label) {
+  const key = document.createElement("button");
+  key.type = "button";
+  key.className = "steward-key cc-showme";
+  key.setAttribute("aria-label", label);
+  const text = document.createElement("span");
+  text.textContent = "show me";
+  key.appendChild(text);
+  key.addEventListener("click", () => {
+    const card = build();
+    if (card) ccSpinePush(card);
+  });
+  return key;
+}
+
+/* ---- the /find filter ----
+   Command text and answer text, case-insensitively. Receipts and instruments
+   are deliberately outside the search — the gaps line on a /find card says so
+   rather than letting the count imply more than it measured. */
+
+function ccLogTurns() {
+  return [...(ccLogEl?.querySelectorAll(".cc-turn") || [])];
+}
+
+function ccTurnHaystack(turn) {
+  const parts = [...turn.querySelectorAll(".cc-turn-you .cc-turn-text, .cc-turn-reply .cc-turn-text")];
+  return ccLower(parts.map((node) => node.textContent).join(" "));
+}
+
+function ccApplyFilter() {
+  ccLogTurns().forEach((turn) => {
+    turn.classList.toggle("is-dim", Boolean(ccFilter) && !ccTurnHaystack(turn).includes(ccFilter));
+  });
+}
+
+function ccClearFilter() {
+  if (!ccFilter) return false;
+  ccFilter = "";
+  ccApplyFilter();
+  return true;
 }
 
 /* ---- the commands ----
@@ -4699,6 +5138,7 @@ function ccCmdStatus(started) {
   const disk = diskState(ccLatest());
   const coverage = ccCoveragePercent();
   const scanned = numberOr(ccLatest().coverage?.scannedBytes);
+  const unknown = numberOr(ccLatest().coverage?.unknownBytes);
   const percent = Math.round(coverage);
   return {
     text: `${categories.length} categories tracked. ${ccGb(disk.available, 0)} gb free. coverage ${percent}%.`,
@@ -4708,6 +5148,23 @@ function ccCmdStatus(started) {
       `${categories.length} categories, snapshot ${ccClock()}`,
       STEWARD_RECEIPT_SCOPE_LOCAL,
     ],
+    why: {
+      title: "/status",
+      sub: "latest.json, one reading",
+      /* the fields the sentence was assembled from, at the precision the file
+         holds them — not the precision the sentence rounded them to */
+      rows: [
+        { label: "categories", value: String(categories.length) },
+        { label: "disk.available", value: formatBytes(disk.available).toLowerCase() },
+        { label: "disk.used", value: formatBytes(disk.used).toLowerCase() },
+        { label: "coverage", value: `${coverage.toFixed(2)}%` },
+        { label: "scanned", value: formatBytes(scanned).toLowerCase() },
+        { label: "generatedAt", value: ccClock() },
+      ],
+      method: "direct read",
+      samples: "1 reading",
+      gaps: unknown > 0 ? `${formatBytes(unknown).toLowerCase()} unattributed` : "none",
+    },
     instrument: ccSegBlock(
       coverage,
       CC_COVERAGE_CELLS,
@@ -4755,6 +5212,17 @@ function ccCmdDiff(started, arg) {
         `${snapshots.length} reading${snapshots.length === 1 ? "" : "s"} on file`,
         STEWARD_RECEIPT_SCOPE_LOCAL,
       ],
+      why: {
+        title: "/diff",
+        sub: "history.json",
+        rows: snapshots.map((snapshot, index) => ({
+          label: `reading ${index + 1}`,
+          value: snapshot.date.toISOString(),
+        })),
+        method: "daily delta",
+        samples: `${snapshots.length} of ${snapshots.length} readings`,
+        gaps: "a delta needs two readings; there is one",
+      },
       mood: "watchful",
     };
   }
@@ -4769,10 +5237,23 @@ function ccCmdDiff(started, arg) {
     ? "nothing grew in that window. that is the reading."
     : `${grew.length} categories grew. ${ccLower(top.label)} leads at ${ccGb(top.delta)} gb.`;
 
+  const moving = ranked.filter((row) => row.delta !== 0);
+  const table = moving.length ? moving : ranked;
   const instrument = ccInstrument(`
     ${ccScopeBlock(window)}
-    ${ccTableBlock(ranked.filter((row) => row.delta !== 0).length ? ranked.filter((row) => row.delta !== 0) : ranked, window.length)}
+    ${ccTableBlock(table, window.length)}
   `);
+
+  /* the readings the window actually used, by their own timestamps — the
+     window token that was asked for is in the receipt, not in here */
+  const readings = window.map((snapshot, index) => ({
+    label: `reading ${index + 1}`,
+    value: snapshot.date.toISOString(),
+  }));
+  /* a delta is a subtraction between two snapshots only when both carry
+     per-category bytes; otherwise it fell back to latest.json's own
+     deltaBytes, and that is a gap in the method, not a rounding detail */
+  const perCategory = Boolean(window[0]?.categoryBytes && window.at(-1)?.categoryBytes);
 
   return {
     text,
@@ -4783,6 +5264,26 @@ function ccCmdDiff(started, arg) {
       STEWARD_RECEIPT_SCOPE_LOCAL,
     ],
     instrument,
+    /* what the dim "+ n more" line is hiding, ready for the spine */
+    more: {
+      title: "the rest of the deltas",
+      sub: `${token} window · ${Math.max(0, table.length - CC_TABLE_ROWS)} rows below the fold`,
+      rows: table.slice(CC_TABLE_ROWS).map((row) => ({
+        label: ccLower(row.label),
+        value: row.delta === 0 ? "0" : `${row.delta > 0 ? "+" : "−"}${ccGb(Math.abs(row.delta), 2)} gb`,
+      })),
+      method: "daily delta",
+      samples: `${window.length} readings · ${table.length} categories`,
+      gaps: perCategory ? "none" : "per-category bytes missing on one reading",
+    },
+    why: {
+      title: "/diff",
+      sub: `history.json · ${token} window`,
+      rows: readings,
+      method: "daily delta",
+      samples: `${window.length} of ${snapshots.length} readings · ${deltas.length} categories`,
+      gaps: perCategory ? "none" : "per-category bytes missing; deltas fell back to latest.deltaBytes",
+    },
     mood: "calm",
   };
 }
@@ -4890,6 +5391,14 @@ function ccCmdLesson(started) {
       text: "no lessons on file yet.",
       mark: "unavailable",
       receipt: ["local", "0 lessons on file", "nothing ran"],
+      why: {
+        title: "/lesson",
+        sub: "lessons.json",
+        rows: [{ label: "lessons", value: "0" }],
+        method: "direct read",
+        samples: "0 lessons",
+        gaps: "lessons.json holds no lessons",
+      },
       mood: "watchful",
     };
   }
@@ -4904,12 +5413,28 @@ function ccCmdLesson(started) {
     `${loggedCount} of ${total} logged`,
   );
 
+  const lessonWhy = (rows, samples) => ({
+    title: "/lesson",
+    sub: "lessons.json · progress from local storage",
+    rows,
+    method: "direct read",
+    samples,
+    gaps: "none",
+  });
+
   if (at < 0) {
     return {
       text: "every lesson is logged. nothing queued.",
       mark: "measured",
       receipt: ["local", `${total} of ${total} logged`, "progress stored locally"],
       instrument: meter,
+      why: lessonWhy(
+        [
+          { label: "lessons", value: String(total) },
+          { label: "logged", value: `${loggedCount} of ${total}` },
+        ],
+        `${total} lessons`,
+      ),
       mood: "pleased",
     };
   }
@@ -4925,6 +5450,20 @@ function ccCmdLesson(started) {
     mark: "measured",
     receipt: ["local", `lesson ${number} of ${total}`, "progress stored locally"],
     instrument: meter,
+    /* the turn names a real lesson, so it earns the key that shows it */
+    showMe: {
+      label: `Show lesson ${number} in the evidence spine`,
+      build: () => ccLessonCard(lesson, number, total),
+    },
+    why: lessonWhy(
+      [
+        { label: "position", value: `lesson ${number} of ${total}` },
+        { label: "logged", value: `${loggedCount} of ${total}` },
+        { label: "readMinutes", value: String(minutes) },
+        { label: "id", value: String(lesson?.id || "") },
+      ],
+      `${total} lessons`,
+    ),
     mood: "calm",
   };
 }
@@ -5069,6 +5608,141 @@ function ccCmdThanks(started) {
   };
 }
 
+/* ---- /why · the previous turn, unpacked ----
+
+   It reads the source the previous turn recorded and nothing else. A turn that
+   stood on an assistant envelope resolves its cited ids against the context
+   endpoint; a slash turn resolves against the file it already read. /why does
+   not replace the source it just read, so asking twice unpacks the same turn
+   rather than unpacking /why itself. */
+
+function ccWhyBasis(source) {
+  if (source.kind === "envelope") {
+    const count = arrayOr(source.ids).length;
+    return `${count} id${count === 1 ? "" : "s"} cited`;
+  }
+  const count = arrayOr(source.rows).length;
+  return `${count} row${count === 1 ? "" : "s"} unpacked`;
+}
+
+function ccCmdWhy(started) {
+  if (!ccWhySource) {
+    return {
+      text: "nothing to unpack yet. ask something first.",
+      mark: "unavailable",
+      receipt: ["local", "no previous turn", "nothing ran"],
+      mood: "watchful",
+    };
+  }
+  const source = ccWhySource;
+  const card = ccWhyCard(source);
+  if (!card) {
+    return {
+      text: "nothing to unpack yet. ask something first.",
+      mark: "unavailable",
+      receipt: ["local", "no previous turn", "nothing ran"],
+      mood: "watchful",
+    };
+  }
+  ccSpinePush(card);
+  return {
+    text: "unpacked in the spine. that is what it stood on.",
+    mark: "measured",
+    receipt: ["local", ccWhyBasis(source), STEWARD_RECEIPT_SCOPE_LOCAL],
+    mood: "calm",
+  };
+}
+
+/* ---- /find · the scrollback, dimmed ----
+
+   Nothing is hidden and nothing is removed: a non-matching turn drops to 0.35
+   and stays exactly where it was. The count includes this turn, because the
+   filter is itself a turn and it always matches the term it was given. */
+
+function ccCmdFind(started, arg) {
+  const term = ccLower(arg).trim();
+  if (!term) {
+    return {
+      text: "name a term. /find cache dims everything else.",
+      mark: "unavailable",
+      receipt: ["local", "no argument given", "nothing ran"],
+      mood: "watchful",
+    };
+  }
+
+  const turns = ccLogTurns();
+  const matched = turns.filter((turn) => ccTurnHaystack(turn).includes(term)).length;
+  const total = turns.length + 1;
+  const hits = matched + 1;
+  /* the filter is set here and applied once this turn is in the log, so the
+     turn that named the term is filtered by it like every other turn */
+  ccFilter = term;
+
+  return {
+    text: `${hits} of ${total} turns mention ${term}. the rest are dim.`,
+    mark: "measured",
+    receipt: ["local", `${hits} of ${total} turns match`, "nothing measured"],
+    why: {
+      title: `/find ${term}`,
+      sub: "this log, in memory",
+      rows: [
+        { label: "term", value: term },
+        { label: "turns", value: String(total) },
+        { label: "matched", value: String(hits) },
+      ],
+      method: "text scan",
+      samples: `${total} turns scanned`,
+      gaps: "receipts and instruments are not searched",
+    },
+    mood: "watchful",
+  };
+}
+
+/* ---- /back · the undo for ctrl+L ----
+
+   ctrl+L moves the nodes into memory instead of destroying them, so this is a
+   restore rather than a re-render: the same elements, with their instruments
+   and their hold keys still bound, go back above the line that cleared them.
+   The clearing line stays where it is — clearing happened, and the record of
+   it survives being undone. Two clears in a row stack, oldest first, so the
+   claim "the log never left memory" stays true after the second one. */
+
+function ccCmdBack(started) {
+  if (ccCleared.length === 0) {
+    return {
+      text: "nothing to restore.",
+      mark: "unavailable",
+      receipt: ["local", "0 turns cleared", "nothing measured"],
+      mood: "watchful",
+    };
+  }
+  const nodes = ccCleared;
+  ccCleared = [];
+  const count = nodes.filter((node) => node.classList?.contains("cc-turn")).length;
+  const anchor = ccLogEl?.firstChild || null;
+  nodes.forEach((node) => ccLogEl?.insertBefore(node, anchor));
+  /* a restored turn is subject to whatever filter is standing now */
+  ccApplyFilter();
+
+  return {
+    text: `${count} turn${count === 1 ? "" : "s"} back. the log never left memory.`,
+    mark: "measured",
+    receipt: ["local", `${count} turns restored`, "nothing measured"],
+    why: {
+      title: "/back",
+      sub: "the cleared nodes, held in memory",
+      rows: [
+        { label: "restored", value: `${nodes.length} nodes` },
+        { label: "turns", value: String(count) },
+      ],
+      method: "memory read",
+      samples: `${nodes.length} nodes`,
+      gaps: "none",
+    },
+    mood: "calm",
+  };
+}
+
 /* ---- the deletion refusal ----
    Intercepted on this machine, before the endpoint: a refusal that had to make
    a network call is a refusal that already lost. */
@@ -5101,12 +5775,43 @@ function ccHoldKey() {
   return key;
 }
 
+/* the refusal names one item — the safest candidate on file, or the largest
+   one if nothing on file is safe — and the SHOW ME key opens exactly that item */
+function ccRefuseCandidate() {
+  return ccSafeCandidate()
+    || arrayOr(ccLatest().reclaimable)
+      .filter((item) => numberOr(item?.bytes) > 0)
+      .sort((a, b) => numberOr(b?.bytes) - numberOr(a?.bytes))[0]
+    || null;
+}
+
 function ccRefuseDeletion(started) {
+  const candidate = ccRefuseCandidate();
   return {
     text: CC_REFUSE_DELETE,
     mark: "unavailable",
     receipt: ["local", "refused", "nothing was touched"],
     extra: ccHoldKey(),
+    showMe: candidate
+      ? {
+        label: `Show ${candidate.label || candidate.id} in the evidence spine`,
+        build: () => ccReclaimCard(candidate),
+      }
+      : null,
+    why: {
+      title: "the refusal",
+      sub: "latest.json · reclaimable",
+      rows: candidate
+        ? [
+          { label: "offered", value: String(candidate.id || "") },
+          { label: "size", value: formatBytes(candidate.bytes).toLowerCase() },
+          { label: "risk", value: safeToken(candidate.risk, ["safe", "rebuildable", "low", "medium", "high", "review"], "review") },
+        ]
+        : [],
+      method: "direct read",
+      samples: `${arrayOr(ccLatest().reclaimable).length} reclaim items`,
+      gaps: candidate ? "none" : "no reclaim item on file to offer",
+    },
     mood: "watchful",
   };
 }
@@ -5397,12 +6102,19 @@ function ccRun(line) {
   let result;
   if (cmd === "/status") result = ccCmdStatus(started);
   else if (cmd === "/diff") result = ccCmdDiff(started, arg);
+  else if (cmd === "/why") result = ccCmdWhy(started);
+  else if (cmd === "/find") result = ccCmdFind(started, arg);
+  else if (cmd === "/back") result = ccCmdBack(started);
   else if (cmd === "/watch") result = ccCmdWatch(started, arg);
   else if (cmd === "/lesson") result = ccCmdLesson(started);
   else if (cmd === "/mode") result = ccCmdMode(started, arg, line);
   else if (cmd === "/quiet") result = ccCmdQuiet(started, arg);
   else if (cmd === "/thanks") result = ccCmdThanks(started);
   else result = ccMiss(started, cmd);
+
+  /* every turn but /why records what the next /why would unpack. /why is the
+     one command that reads the source without becoming it. */
+  if (cmd !== "/why" && !result?.deferred) ccWhySource = result?.why || ccWhyGeneric(line);
 
   if (result?.deferred) {
     /* the consent panel owns the screen until it is answered. Nothing is
@@ -5422,11 +6134,14 @@ function ccRun(line) {
    both places because it is one turn: same endpoint, same mode, same store. */
 function ccFreeText(line, started) {
   if (CC_DELETE_VERBS.test(line) && ccWords(line) > 1) {
-    ccPrintTurn({ you: line, started, ...ccRefuseDeletion(started) });
+    const refusal = ccRefuseDeletion(started);
+    ccWhySource = refusal.why;
+    ccPrintTurn({ you: line, started, ...refusal });
     return;
   }
 
   if (stewardAskOffline || typeof fetch !== "function") {
+    ccWhySource = ccWhyGeneric(line, "no assistant endpoint in this build");
     ccPrintTurn({
       you: line,
       text: STEWARD_ASK_OFFLINE,
@@ -5440,6 +6155,9 @@ function ccFreeText(line, started) {
 
   let printed = false;
   let pendingReceipt = "";
+  /* a /why typed while the ask is still in flight must not unpack the turn
+     before it — the source says where this one has got to */
+  ccWhySource = ccWhyGeneric(line, "the assistant has not answered yet");
   ccAskMirror = {
     reply: (text, epistemic) => {
       printed = true;
@@ -5463,11 +6181,27 @@ function ccFreeText(line, started) {
       turn.appendChild(node);
       ccScrollLog();
     },
+    /* the envelope is what /why unpacks: its cited ids, resolved against the
+       same context endpoint the consent preview reads. The envelope itself is
+       not kept — only the id list and the engine that answered. */
+    envelope: (envelope) => {
+      const ids = arrayOr(envelope?.evidenceIds).filter((id) => typeof id === "string");
+      const provider = typeof envelope?.provider === "string" ? envelope.provider : "local";
+      const engine = STEWARD_ENGINE_WORDS.get(provider) || "local";
+      ccWhySource = {
+        kind: "envelope",
+        title: line,
+        sub: `${engine} · ${ids.length} id${ids.length === 1 ? "" : "s"} cited`,
+        ids,
+        method: provider === "local" ? "direct read of the evidence packet" : `evidence packet sent to ${engine}`,
+      };
+    },
   };
 
   Promise.resolve(stewardAsk(line)).finally(() => {
     ccAskMirror = null;
     if (printed) return;
+    ccWhySource = ccWhyGeneric(line, "the assistant returned no answer");
     ccPrintTurn({
       you: line,
       text: STEWARD_ASK_FAILURE,
@@ -5576,6 +6310,12 @@ function ccOpenConsole() {
   ccRenderHead();
   ccPromptCaretShow(true);
   if (ccLogEl) ccLogEl.textContent = "";
+  /* a fresh log has nothing to filter, nothing to restore, and nothing for the
+     spine to be standing open about */
+  ccFilter = "";
+  ccCleared = [];
+  ccWhySource = null;
+  ccSpineReset();
   ccPhase("idle");
   ccScan(false);
   ccBoot();
@@ -5589,6 +6329,10 @@ function ccClose(returnFocus = true) {
   ccClearBoot();
   ccFinishReveal();
   ccPaletteClose();
+  /* the cards belong to a log that is about to be thrown away; the local-only
+     line's flag is not reset, because it is a claim about the session */
+  ccSpineReset();
+  ccFilter = "";
   ccModePending = null;
   ccAskMirror = null;
   stewardConsentCancel(false);
@@ -5620,10 +6364,14 @@ function ccKeydown(event) {
   /* the consent panel answers its own keys */
   if (stewardConsentPending) return;
 
+  /* the esc order, in full: a standing /find filter first, then the palette,
+     then the console itself. The most recent thing you did is the first thing
+     esc undoes, and leaving is always the last of them. */
   if (event.key === "Escape") {
     event.stopPropagation();
     event.preventDefault();
-    if (ccPaletteOpen) ccPaletteClose();
+    if (ccClearFilter()) ccInput?.focus({ preventScroll: true });
+    else if (ccPaletteOpen) ccPaletteClose();
     else ccClose(true);
     return;
   }
@@ -5647,9 +6395,14 @@ function ccKeydown(event) {
   if ((event.ctrlKey || event.metaKey) && ccLower(event.key) === "l") {
     event.preventDefault();
     event.stopPropagation();
-    if (ccLogEl) ccLogEl.textContent = "";
-    /* /back is phase 2 — the line says so rather than implying a restore */
-    ccSystemLine(CC_BACK_STUB);
+    /* the nodes are moved, not destroyed — /back puts these very elements
+       back, with their instruments and their bound keycaps intact */
+    if (ccLogEl) {
+      const cleared = [...ccLogEl.children];
+      cleared.forEach((node) => node.remove());
+      ccCleared = [...ccCleared, ...cleared];
+    }
+    ccSystemLine(CC_CLEAR_LINE);
     ccInput?.focus({ preventScroll: true });
     return;
   }
@@ -5742,6 +6495,11 @@ function setupConsole() {
   });
   ccInput?.addEventListener("click", ccSyncPrompt);
   ccInput?.addEventListener("keyup", ccSyncPrompt);
+
+  /* the only control that collapses the spine — esc belongs to the filter, the
+     palette and the door, in that order */
+  ccSpineCloseKey?.addEventListener("click", ccSpineClose);
+  ccSpineSet(false);
 
   /* a click in the log finishes a reveal and hands the caret back — unless the
      click was a selection, which is a reader's gesture and stays a reader's */
