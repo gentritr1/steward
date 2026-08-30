@@ -6621,7 +6621,6 @@ button.cc-more:focus-visible {
   align-items: center;
   justify-content: center;
   min-width: 0;
-  border-left: 1px solid var(--rule);
   background: var(--well);
   overflow: hidden;
 }
