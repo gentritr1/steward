@@ -2501,6 +2501,8 @@ function stewardSyncShellHolds() {
 
 const STEWARD_HOLD_TITLE = "press and hold to file — enter files instantly";
 const STEWARD_HOLD_HINT = "▸ hold to file · release early to cancel";
+/* the word on a full gauge: what letting go will do, not what has happened */
+const STEWARD_HOLD_ARMED = "filed";
 
 let stewardHintDone = false;
 let stewardHintOn = false;
@@ -2558,11 +2560,15 @@ function stewardChargeTimeout(fn, ms) {
 
 function stewardChargeReset() {
   if (!stewardCharge) return;
+  const { key, target } = stewardCharge;
   clearTimeout(stewardCharge.timer);
   stewardChargeTimers.delete(stewardCharge.timer);
-  /* dropping the class hands the fill back to its 180ms drain transition */
-  stewardCharge.key.classList.remove("is-charging", "is-armed");
+  /* dropping the class hands the fill back to its 120ms drain transition */
+  key.classList.remove("is-charging", "is-armed");
   stewardCharge = null;
+  /* the armed cap says FILED; whatever happens next, the label goes back to
+     reading the one truth it has — whether the row is actually held */
+  stewardSyncHold(key, target);
 }
 
 /* a charge that is abandoned rather than released — the shell closing, a
@@ -2594,6 +2600,9 @@ function stewardChargeBegin(key, target) {
     if (!stewardCharge || stewardCharge.key !== key) return;
     stewardCharge.armed = true;
     key.classList.add("is-armed");
+    /* the gauge is full and the cap says what letting go will do */
+    const label = key.querySelector("[data-hold-label]") || key;
+    label.textContent = STEWARD_HOLD_ARMED;
     stewardSet("armed", "ready. let go.");
   }, STEWARD_CHARGE_MS);
 }
@@ -2628,13 +2637,19 @@ function stewardChargeRelease(key) {
   stewardSyncHold(key, target);
   /* the gesture has been performed — the words have done their job */
   stewardHintDismiss();
-  if (!refuses) stewardStamp(key);
+  if (!refuses) {
+    stewardStamp(key);
+    /* a successful file is one of the two things that pleases him */
+    stewardExpressWrite("pleased", STEWARD_EXPRESSION_HOLD.pleased);
+  }
 }
 
 function stewardHoldInstant(key, target) {
+  const refuses = target?.dataset.reviewRisk === "review";
   target?.click();
   stewardSyncHold(key, target);
   stewardHintDismiss();
+  if (!refuses) stewardExpressWrite("pleased", STEWARD_EXPRESSION_HOLD.pleased);
 }
 
 function stewardBindHold(key, target) {
@@ -2669,25 +2684,38 @@ function stewardBindHold(key, target) {
    is lost from the product — the long trend sentence still lives in CH01's
    console panel, which is where it was always written in full. */
 
-const STEWARD_READING_GOAL = 7;
-
+/* three facts, middots, never a sentence: how much room is left, who is
+   answering, and what moved since the previous reading. */
 function stewardStatusLine() {
+  const disk = diskState(stewardData.latest);
+  const free = `${stewardGb(disk.available, 0)} gb free`;
+  const engine = STEWARD_ENGINE_WORDS.get(stewardMode) || "local";
   const count = validSnapshots(stewardData.history).length;
-  /* below two readings there is no "since last" to report — the count is the news */
-  if (count === 0) return "▸ no readings yet · 0/2 readings";
-  if (count === 1) return "▸ baseline set · 1/2 readings";
+  /* below two readings there is no "since last" to report — the baseline is the news */
+  if (count < 2) return `${free} · ${engine} · ${count === 0 ? "no readings yet" : "baseline set"}`;
   const { change } = deriveSummary(stewardData.latest, stewardData.history);
   const move = change === 0
-    ? "no change"
-    : `${change > 0 ? "+" : "−"}${stewardGb(Math.abs(change))} gb`;
-  /* the goal never sits behind the count: a longer history raises its own bar */
-  return `▸ ${move} since last · ${count}/${Math.max(STEWARD_READING_GOAL, count)} readings`;
+    ? "no change since last"
+    : `${change > 0 ? "+" : "−"}${stewardGb(Math.abs(change))} gb since last`;
+  return `${free} · ${engine} · ${move}`;
 }
 
 function stewardRenderStatus() {
   if (!stewardStatusEl) return;
   stewardStatusEl.textContent = stewardStatusLine();
   stewardStatusEl.hidden = false;
+}
+
+/* a name that is a path loses its middle, never its tail: "Library/…/Caches"
+   is unreadable if the ellipsis eats the one segment that identifies the row.
+   The head shrinks and ellipsizes; the last segment is pinned and only gives
+   way when it alone cannot fit. A plain name has no tail and ellipsizes whole. */
+function stewardPathName(label) {
+  const at = String(label).lastIndexOf("/");
+  if (at < 0) return `<span class="steward-name-head">${escapeHtml(label)}</span>`;
+  const head = String(label).slice(0, at);
+  const tail = String(label).slice(at);
+  return `<span class="steward-name-head">${escapeHtml(head)}</span><span class="steward-name-tail">${escapeHtml(tail)}</span>`;
 }
 
 function stewardRenderShell() {
@@ -2706,7 +2734,7 @@ function stewardRenderShell() {
             const label = String(item?.label || "Cleanup opportunity");
             return `
               <li class="steward-shell-row">
-                <span class="steward-shell-name" title="${escapeHtml(label)}">${escapeHtml(label)}</span>
+                <span class="steward-shell-name" title="${escapeHtml(label)}">${stewardPathName(label)}</span>
                 <span class="steward-shell-size">${formatBytes(item?.bytes)}</span>
                 <button class="steward-key steward-shell-hold" type="button" data-steward-hold="${escapeHtml(id)}" aria-pressed="false" title="${STEWARD_HOLD_TITLE}" aria-label="Hold ${escapeHtml(label)} for review"><span data-hold-label>hold</span></button>
                 <button class="steward-key steward-shell-show" type="button" data-steward-show="${escapeHtml(id)}" aria-label="Show ${escapeHtml(label)} in the reclaim bay"><span>show me</span></button>
@@ -2718,8 +2746,11 @@ function stewardRenderShell() {
     </div>
   `;
 
-  /* the status line reads the same data and is redrawn on the same beat */
+  /* the status line, the preroll and the shortcuts read the same data and are
+     redrawn on the same beat */
   stewardRenderStatus();
+  stewardRenderPreroll();
+  stewardRenderSuggestions();
 
   /* a refresh mid-shell rebuilds the panel; the hint outlives the markup it sat in */
   stewardHintMount();
@@ -2810,18 +2841,25 @@ const STEWARD_ASK_FAILURE = "the local brief is still here. try again.";
 const STEWARD_ASK_OFFLINE = "assistant offline. the brief is the source of truth.";
 const STEWARD_ASK_UNCONFIGURED = "provider not configured. set the api key and restart the server.";
 
-/* provider → receipt. An unknown provider gets no receipt at all: the line is a
-   privacy claim, and a claim we cannot make from our own table is not made.
-   The cloud rows are prefixes — the model comes off the envelope and is written
-   as text, never as a label the code trusts. */
-const STEWARD_RECEIPTS = new Map([
-  ["local", "local · nothing left this mac"],
+/* provider → the engine word that opens the receipt. An unknown provider gets no
+   receipt at all: the line is a privacy claim, and a claim we cannot make from
+   our own table is not made. The model comes off the envelope and is written as
+   text, never as a label the code trusts.
+
+   The grammar is four slots, lowercase, middots:
+       engine · basis · scope · time
+   Nothing in it is a sentence, and nothing in it is a brand. */
+const STEWARD_ENGINE_WORDS = new Map([
+  ["local", "local"],
   ["openai", "openai"],
   ["anthropic", "claude"],
 ]);
-const STEWARD_RECEIPT_SENT = "sent redacted measurements";
-const STEWARD_RECEIPT_FALLBACK = " · cloud unavailable, local answered";
-const STEWARD_RECEIPT_MODEL_MAX = 40;
+const STEWARD_RECEIPT_SCOPE_LOCAL = "0 bytes left this mac";
+const STEWARD_RECEIPT_SCOPE_CLOUD = "no file contents";
+const STEWARD_RECEIPT_NO_EVIDENCE = "no evidence needed";
+const STEWARD_RECEIPT_UNAVAILABLE = "unavailable";
+const STEWARD_RECEIPT_ANSWERED = "local answered";
+const STEWARD_RECEIPT_MODEL_MAX = 24;
 
 /* the word line while a cloud call is in flight — he says where it went */
 const STEWARD_ASK_CLOUD_LINES = {
@@ -2829,14 +2867,27 @@ const STEWARD_ASK_CLOUD_LINES = {
   anthropic: "asking claude. nothing else leaves.",
 };
 
-/* measured is the unmarked case — everything else says so in front of the words */
+/* every answer carries its own mark in the gutter — measured included. The mark
+   is the epistemic state made visible, so there is no unmarked case to guess at.
+   `measured` draws a 4px dot in CSS rather than a glyph; the rest are glyphs. */
 const STEWARD_EPISTEMIC = {
+  measured: { mark: "", label: "measured" },
   inferred: { mark: "~", label: "inferred" },
-  unavailable: { mark: "·", label: "unavailable" },
-  simulated: { mark: "≈", label: "simulated" },
+  unavailable: { mark: "—", label: "unavailable" },
+  simulated: { mark: "◇", label: "simulated" },
 };
 
 const STEWARD_EXPRESSIONS = new Set(["calm", "pleased", "watchful", "concerned"]);
+
+/* how long each read holds the eyes. `fallback` and `unavailable` are client
+   reads and are deliberately absent from the allowlist above. */
+const STEWARD_EXPRESSION_HOLD = {
+  calm: 5200,
+  pleased: 1400,
+  watchful: 3000,
+  concerned: 1600,
+  fallback: 1600,
+};
 
 /* the client-side mirror of the server allowlist. A next step that is not on
    this list renders nothing — no button, no message, no console noise. */
@@ -2852,6 +2903,8 @@ const STEWARD_LESSON_TARGET = /^(?:current|day-(?:[1-9]|[12][0-9]|30))$/;
 
 const stewardConvo = stewardDock?.querySelector("[data-steward-convo]");
 const stewardLogEl = stewardDock?.querySelector("[data-steward-log]");
+const stewardPrerollEl = stewardDock?.querySelector("[data-steward-preroll]");
+const stewardSuggestEl = stewardDock?.querySelector("[data-steward-suggest]");
 const stewardPromptForm = stewardDock?.querySelector("[data-steward-prompt]");
 const stewardInput = stewardDock?.querySelector("[data-steward-input]");
 const stewardAskKey = stewardDock?.querySelector("[data-steward-ask]");
@@ -2866,25 +2919,47 @@ let stewardExpressionTimer = null;
    data-state belongs to the telemetry. This attribute never touches it: it
    moves the eyes for seven seconds and then gets out of the way. */
 
-function stewardExpress(expression) {
-  if (!stewardDock || !STEWARD_EXPRESSIONS.has(expression)) return;
+/* one writer for every read. `hold` in ms, or null for a read that stays until
+   something clears it. Nothing here touches data-state. */
+function stewardExpressWrite(expression, hold) {
+  if (!stewardDock) return;
   clearTimeout(stewardExpressionTimer);
   stewardDock.setAttribute("data-expression", expression);
+  if (hold === null) return;
   stewardExpressionTimer = setTimeout(() => {
     stewardDock.removeAttribute("data-expression");
-  }, STEWARD_EXPRESSION_MS);
+  }, hold);
+}
+
+function stewardExpressClear() {
+  if (!stewardDock) return;
+  clearTimeout(stewardExpressionTimer);
+  stewardDock.removeAttribute("data-expression");
+}
+
+/* the only door the server may open — the allowlist is still the separation */
+function stewardExpress(expression) {
+  if (!STEWARD_EXPRESSIONS.has(expression)) return;
+  stewardExpressWrite(expression, stewardExpressionHold(expression));
+}
+
+function stewardExpressionHold(expression) {
+  return Object.hasOwn(STEWARD_EXPRESSION_HOLD, expression)
+    ? STEWARD_EXPRESSION_HOLD[expression]
+    : STEWARD_EXPRESSION_MS;
 }
 
 /* the fallback read is ours, not the server's — it is deliberately outside the
    allowlist above so no envelope can ask for amber eyes it has not earned.
-   Same seven seconds, same timer, then the eyes go back to the telemetry. */
+   It wears the concerned pose and clears itself after 1.6s. */
 function stewardExpressFallback() {
-  if (!stewardDock) return;
-  clearTimeout(stewardExpressionTimer);
-  stewardDock.setAttribute("data-expression", "fallback");
-  stewardExpressionTimer = setTimeout(() => {
-    stewardDock.removeAttribute("data-expression");
-  }, STEWARD_EXPRESSION_MS);
+  stewardExpressWrite("fallback", STEWARD_EXPRESSION_HOLD.fallback);
+}
+
+/* the one read with no timer: an answer he could not give stays on his face
+   until the next question is asked */
+function stewardExpressUnavailable() {
+  stewardExpressWrite("unavailable", null);
 }
 
 /* ---- the next step · code owns the label and the destination ---- */
@@ -2973,26 +3048,43 @@ function stewardResolveNextStep(nextStep) {
 
 /* ---- the log ---- */
 
-function stewardMark(text) {
-  const mark = document.createElement("span");
-  mark.className = "steward-turn-mark";
-  mark.setAttribute("aria-hidden", "true");
-  mark.textContent = text;
-  return mark;
-}
-
 function stewardScrollLog() {
   if (!stewardLogEl) return;
   stewardLogEl.scrollTop = stewardLogEl.scrollHeight;
 }
 
+/* ---- history compression ----
+
+   Only the newest turn carries its receipt; older turns give the room back and
+   settle to one you-line plus one answer. CSS hides the older receipts and a
+   fine pointer reveals them on hover. A finger has no hover, so a tap anywhere
+   on a turn toggles the same reveal — the same information, one gesture each.
+   The keycap inside a turn is not a reveal target: it has its own job. */
+function stewardTurnReveal(event) {
+  if (stewardFinePointer?.matches) return;
+  const turn = event.currentTarget;
+  if (event.target.closest("button, a, input")) return;
+  turn.classList.toggle("is-revealed");
+}
+
 function stewardOpenTurn(text) {
   if (!stewardLogEl) return null;
+  /* a held read belongs to the answer before this one */
+  stewardExpressClear();
+  stewardPrerollHide();
   const turn = document.createElement("div");
   turn.className = "steward-turn";
+  turn.addEventListener("click", stewardTurnReveal);
   const line = document.createElement("p");
   line.className = "steward-turn-you";
-  line.append(stewardMark("▸ "), document.createTextNode(`you · ${text}`));
+  const label = document.createElement("span");
+  label.className = "steward-turn-label";
+  label.setAttribute("aria-hidden", "true");
+  label.textContent = "you";
+  const body = document.createElement("span");
+  body.className = "steward-turn-text";
+  body.textContent = text;
+  line.append(label, body);
   turn.appendChild(line);
   stewardLogEl.appendChild(turn);
   stewardTurns.push(turn);
@@ -3002,48 +3094,180 @@ function stewardOpenTurn(text) {
   return turn;
 }
 
+/* the marker is the epistemic state, in its own 14px gutter, and it is the only
+   thing in the turn that carries a state colour. The answer is never coloured:
+   a sentence that changes hue is a sentence you have to decode. */
+function stewardEpistemicMark(epistemicState) {
+  const flag = Object.hasOwn(STEWARD_EPISTEMIC, epistemicState)
+    ? STEWARD_EPISTEMIC[epistemicState]
+    : STEWARD_EPISTEMIC.measured;
+  const state = Object.hasOwn(STEWARD_EPISTEMIC, epistemicState) ? epistemicState : "measured";
+  const mark = document.createElement("span");
+  mark.className = "steward-turn-mark";
+  mark.dataset.mark = state;
+  mark.textContent = flag.mark;
+  mark.setAttribute("role", "img");
+  mark.setAttribute("aria-label", `${flag.label} answer`);
+  mark.title = flag.label;
+  return mark;
+}
+
 function stewardReplyLine(turn, text, epistemicState) {
   if (!turn) return;
   const line = document.createElement("p");
   line.className = "steward-turn-reply";
-  line.appendChild(stewardMark("▸ "));
-  const flag = Object.hasOwn(STEWARD_EPISTEMIC, epistemicState) ? STEWARD_EPISTEMIC[epistemicState] : null;
-  if (flag) {
-    const badge = document.createElement("span");
-    badge.className = "steward-turn-epistemic";
-    badge.textContent = flag.mark;
-    badge.title = `${flag.label} — not a direct measurement`;
-    badge.setAttribute("role", "img");
-    badge.setAttribute("aria-label", `${flag.label} answer`);
-    line.append(badge, document.createTextNode(" "));
-  }
+  line.appendChild(stewardEpistemicMark(epistemicState));
+  const body = document.createElement("span");
+  body.className = "steward-turn-text";
   /* the only place a server string is written, and it is written as text */
-  line.appendChild(document.createTextNode(text));
+  body.textContent = text;
+  line.appendChild(body);
   turn.appendChild(line);
   if (liveRegion) liveRegion.textContent = text;
   stewardScrollLog();
 }
 
+/* the time slot is measured on this machine, by this code: the clock starts
+   before the request and stops when the answer is in hand. Nothing about it
+   comes off the wire. */
+function stewardReceiptTime(elapsed) {
+  const ms = Number.isFinite(elapsed) ? Math.max(0, elapsed) : 0;
+  return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.round(ms)}ms`;
+}
+
+/* the basis slot counts what the answer stood on. Zero is not a hole in the
+   receipt — it is a claim of its own. */
+function stewardReceiptBasis(envelope, verb) {
+  const count = Array.isArray(envelope?.evidenceIds) ? envelope.evidenceIds.length : 0;
+  if (count === 0) return STEWARD_RECEIPT_NO_EVIDENCE;
+  return `${count} id${count === 1 ? "" : "s"} ${verb}`;
+}
+
 /* the receipt is a privacy claim, so every part of it is either a code-owned
    string or the server's own model stamp written as text. An envelope that
    names a provider this table does not know gets no receipt at all. */
-function stewardReceiptLine(turn, envelope) {
+function stewardReceiptLine(turn, envelope, { elapsed = 0, requested = "local" } = {}) {
   const provider = typeof envelope?.provider === "string" ? envelope.provider : "";
-  const base = STEWARD_RECEIPTS.get(provider);
-  if (!turn || !base) return;
-  let receipt = base;
-  if (provider !== "local") {
+  const engine = STEWARD_ENGINE_WORDS.get(provider);
+  if (!turn || !engine) return;
+  const time = stewardReceiptTime(elapsed);
+  const fell = envelope?.fallbackUsed === true;
+
+  let receipt;
+  if (fell) {
+    /* the requested engine is ours to name: the envelope is stamped with
+       whoever actually answered, which is exactly the thing being disclosed */
+    const asked = STEWARD_ENGINE_WORDS.get(requested) || engine;
+    receipt = [
+      `${asked} ${STEWARD_RECEIPT_UNAVAILABLE}`,
+      STEWARD_RECEIPT_ANSWERED,
+      STEWARD_RECEIPT_SCOPE_LOCAL,
+      time,
+    ].join(" · ");
+  } else if (provider === "local") {
+    receipt = [engine, stewardReceiptBasis(envelope, "cited"), STEWARD_RECEIPT_SCOPE_LOCAL, time].join(" · ");
+  } else {
     const model = String(envelope?.model || "").trim().slice(0, STEWARD_RECEIPT_MODEL_MAX);
-    receipt = model
-      ? `${base} · ${model} · ${STEWARD_RECEIPT_SENT}`
-      : `${base} · ${STEWARD_RECEIPT_SENT}`;
+    receipt = [
+      model ? `${engine} ${model}` : engine,
+      stewardReceiptBasis(envelope, "sent"),
+      STEWARD_RECEIPT_SCOPE_CLOUD,
+      time,
+    ].join(" · ");
   }
-  /* the fallback says so on whichever provider the envelope ended up stamped with */
-  if (envelope?.fallbackUsed === true) receipt += STEWARD_RECEIPT_FALLBACK;
+
   const line = document.createElement("p");
   line.className = "steward-receipt";
+  /* the amber is on the receipt and only on the receipt — the answer above it
+     is the same colour it would have been had nothing gone wrong */
+  if (fell) line.classList.add("is-fallback");
   line.textContent = receipt;
   turn.appendChild(line);
+}
+
+/* ---- the preroll · the empty state is a reading, not an invitation ----
+
+   Three dim lines built from the same snapshot the deck is showing, so an
+   unasked prompt still tells you something true. It is replaced by the first
+   turn of the session and never comes back. */
+
+const STEWARD_PREROLL_CLEAN = "full check, clean";
+const STEWARD_PREROLL_BASELINE = "baseline set";
+const STEWARD_PREROLL_WAITING = "— waiting";
+
+let stewardPrerollDone = false;
+
+function stewardPrerollHide() {
+  if (!stewardPrerollEl || stewardPrerollDone) return;
+  stewardPrerollDone = true;
+  stewardPrerollEl.textContent = "";
+  stewardPrerollEl.hidden = true;
+}
+
+function stewardRenderPreroll() {
+  if (!stewardPrerollEl || stewardPrerollDone) return;
+  const clock = formatClock(stewardData.latest?.generatedAt);
+  const count = validSnapshots(stewardData.history).length;
+  const { change } = deriveSummary(stewardData.latest, stewardData.history);
+  const move = count < 2
+    ? STEWARD_PREROLL_BASELINE
+    : change === 0
+      ? "no change since last"
+      : `${change > 0 ? "+" : "−"}${stewardGb(Math.abs(change))} gb since last`;
+  const lines = [`${clock} · ${STEWARD_PREROLL_CLEAN}`, `${clock} · ${move}`, STEWARD_PREROLL_WAITING];
+  stewardPrerollEl.textContent = "";
+  lines.forEach((text) => {
+    const line = document.createElement("p");
+    line.className = "steward-preroll-line";
+    line.textContent = text;
+    stewardPrerollEl.appendChild(line);
+  });
+  stewardPrerollEl.hidden = false;
+}
+
+/* ---- the suggestion chips ----
+
+   A shortcut is not a menu: at most two, drawn from a pool this file owns, and
+   each one leaves the pool the moment it has been asked. Nothing here is ever
+   model-generated — the character does not get to propose his own questions. */
+
+const STEWARD_SUGGESTIONS = [
+  "what changed?",
+  "what can i reclaim?",
+  "how is coverage?",
+  "when is the next lesson?",
+];
+const STEWARD_SUGGEST_MAX = 2;
+
+const stewardAskedSuggestions = new Set();
+
+function stewardSuggestUse(message) {
+  const asked = String(message || "").trim().toLowerCase();
+  if (STEWARD_SUGGESTIONS.includes(asked)) stewardAskedSuggestions.add(asked);
+}
+
+function stewardRenderSuggestions() {
+  if (!stewardSuggestEl) return;
+  const open = STEWARD_SUGGESTIONS
+    .filter((text) => !stewardAskedSuggestions.has(text))
+    .slice(0, STEWARD_SUGGEST_MAX);
+  stewardSuggestEl.textContent = "";
+  if (open.length === 0 || stewardAskOffline) {
+    stewardSuggestEl.hidden = true;
+    return;
+  }
+  open.forEach((text) => {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "steward-key steward-suggest-key";
+    const label = document.createElement("span");
+    label.textContent = text;
+    chip.appendChild(label);
+    /* the chip submits exactly what it says, through the one ask path */
+    chip.addEventListener("click", () => stewardAsk(text));
+    stewardSuggestEl.appendChild(chip);
+  });
+  stewardSuggestEl.hidden = false;
 }
 
 function stewardActionKey(turn, nextStep) {
@@ -3091,11 +3315,34 @@ const STEWARD_CLOUD_MODES = new Set(["openai", "anthropic"]);
 const STEWARD_PROVIDER_NAMES = { openai: "OpenAI", anthropic: "Anthropic" };
 const STEWARD_MODE_UNAVAILABLE = "no api key configured";
 const STEWARD_MODE_LABEL_PREFIX = "answer mode · ";
+const STEWARD_MODE_NOTES = {
+  local: "on device",
+  consented: "key set",
+  asks: "asks first",
+  keyless: "no key",
+};
+const STEWARD_CHIP_FALLBACK_MS = 1600;
 
 const STEWARD_CONSENT_HEAD = "▸ before this leaves the mac";
+
+/* the same sentence as before, split at its two load-bearing phrases so the
+   headline can weight them without the copy being assembled anywhere else.
+   Joined, each row is character-for-character what it always was. */
 const STEWARD_CONSENT_SENTENCE = {
-  openai: "questions and the redacted measurements below leave this mac and are sent to OpenAI.",
-  anthropic: "questions and the redacted measurements below leave this mac and are sent to Anthropic.",
+  openai: [
+    ["questions and ", false],
+    ["the redacted measurements below", true],
+    [" ", false],
+    ["leave this mac", true],
+    [" and are sent to OpenAI.", false],
+  ],
+  anthropic: [
+    ["questions and ", false],
+    ["the redacted measurements below", true],
+    [" ", false],
+    ["leave this mac", true],
+    [" and are sent to Anthropic.", false],
+  ],
 };
 const STEWARD_CONSENT_SCOPE = "no project names. no file paths. no fallback to another provider.";
 const STEWARD_CONSENT_RETENTION = {
@@ -3125,6 +3372,8 @@ let stewardModesChecked = false;
 let stewardModePopOpen = false;
 let stewardConsentPending = null;
 let stewardConsentReturnKey = null;
+let stewardChipFallback = false;
+let stewardChipFallbackTimer = null;
 
 function stewardConsentGranted(mode) {
   const key = Object.hasOwn(STEWARD_CONSENT_KEYS, mode) ? STEWARD_CONSENT_KEYS[mode] : "";
@@ -3151,15 +3400,58 @@ function stewardModeLabel(mode) {
   return STEWARD_MODES.find((entry) => entry.mode === mode)?.label || "LOCAL";
 }
 
+/* the note column · one short reason per row, so a row that cannot be chosen
+   still explains itself instead of just being dim */
+function stewardModeNote(mode) {
+  if (mode === "local") return STEWARD_MODE_NOTES.local;
+  if (!stewardProviderReady(mode)) return STEWARD_MODE_NOTES.keyless;
+  return stewardConsentGranted(mode) ? STEWARD_MODE_NOTES.consented : STEWARD_MODE_NOTES.asks;
+}
+
+/* ---- the chip's five states ----
+   in-flight and after-fallback are transient and win while they last. The
+   resting read is: local (the only state with a coloured word), cloud lit, or
+   no-key — dimmed and dashed, but never removed and never unclickable, because
+   the picker behind it is where the reason is written down. */
+function stewardChipState() {
+  if (stewardAskInFlight) return "in-flight";
+  if (stewardChipFallback) return "fallback";
+  const anyCloud = [...STEWARD_CLOUD_MODES].some((mode) => stewardProviderReady(mode));
+  if (!anyCloud) return "no-key";
+  return stewardMode === "local" ? "local" : "cloud";
+}
+
+function stewardChipSync() {
+  if (!stewardModeChip) return;
+  stewardModeChip.dataset.chipState = stewardChipState();
+}
+
+/* amber for 1.6s and then back — a fallback is news, not a new resting state */
+function stewardChipFlashFallback() {
+  if (!stewardModeChip) return;
+  clearTimeout(stewardChipFallbackTimer);
+  stewardChipFallback = true;
+  stewardChipSync();
+  stewardChipFallbackTimer = setTimeout(() => {
+    stewardChipFallback = false;
+    stewardChipSync();
+  }, STEWARD_CHIP_FALLBACK_MS);
+}
+
 function stewardModeSync() {
   stewardModeKeys().forEach((key) => {
     const selected = key.dataset.stewardMode === stewardMode;
     key.setAttribute("aria-checked", String(selected));
     /* roving tabindex — the group is one tab stop, arrows move inside it */
     key.tabIndex = selected ? 0 : -1;
+    const note = key.querySelector("[data-mode-note]");
+    if (note) note.textContent = stewardModeNote(key.dataset.stewardMode);
   });
   /* the chip is the picker's closed state: it always reads the live mode */
   if (stewardModeChipLabel) stewardModeChipLabel.textContent = stewardModeLabel(stewardMode);
+  stewardChipSync();
+  /* the engine is one of the status line's three facts */
+  stewardRenderStatus();
 }
 
 /* a press anywhere outside the chip and its picker closes it — captured, so a
@@ -3263,10 +3555,15 @@ function stewardModesRender() {
     key.dataset.stewardMode = entry.mode;
     key.setAttribute("role", "radio");
     key.setAttribute("aria-checked", "false");
-    key.setAttribute("aria-label", `${STEWARD_MODE_LABEL_PREFIX}${entry.label}`);
+    key.setAttribute("aria-label", `${STEWARD_MODE_LABEL_PREFIX}${entry.label} · ${stewardModeNote(entry.mode)}`);
     const label = document.createElement("span");
     label.textContent = entry.label;
-    key.appendChild(label);
+    /* the second column of the row: the reason, in the row's own words */
+    const note = document.createElement("span");
+    note.className = "steward-mode-note";
+    note.dataset.modeNote = "";
+    note.textContent = stewardModeNote(entry.mode);
+    key.append(label, note);
     if (!stewardProviderReady(entry.mode)) {
       key.disabled = true;
       key.title = STEWARD_MODE_UNAVAILABLE;
@@ -3337,7 +3634,9 @@ function stewardConsentRow(text, className) {
 function stewardContextRows(value, path = "", rows = []) {
   if (rows.length >= STEWARD_CONTEXT_MAX_ROWS) return rows;
   if (value === null || typeof value !== "object") {
-    rows.push(`${path || "value"} · ${String(value)}`);
+    /* two cells, never one string: the id column is fixed so the eye can run
+       down it, and the value is what gets clipped when the row is too long */
+    rows.push({ id: path || "value", value: String(value) });
     return rows;
   }
   if (Array.isArray(value)) {
@@ -3373,7 +3672,14 @@ async function stewardConsentPreview(button, well) {
       rows.forEach((row) => {
         const line = document.createElement("p");
         line.className = "steward-consent-row";
-        line.textContent = row;
+        const id = document.createElement("span");
+        id.className = "steward-consent-id";
+        id.textContent = row.id;
+        const value = document.createElement("span");
+        value.className = "steward-consent-value";
+        value.textContent = row.value;
+        value.title = row.value;
+        line.append(id, value);
         well.appendChild(line);
       });
     }
@@ -3429,7 +3735,23 @@ function stewardConsentOpen(mode, key) {
 
   panel.appendChild(stewardConsentRow(STEWARD_CONSENT_HEAD, "steward-consent-head"));
   panel.appendChild(stewardConsentRow(STEWARD_PROVIDER_NAMES[mode], "steward-consent-provider"));
-  panel.appendChild(stewardConsentRow(STEWARD_CONSENT_SENTENCE[mode], "steward-consent-line"));
+
+  /* the headline · body type, one weight step on the two phrases that decide
+     the answer. No colour does this work — a phrase you must decode is a
+     phrase you will skip. */
+  const headline = document.createElement("p");
+  headline.className = "steward-consent-headline";
+  STEWARD_CONSENT_SENTENCE[mode].forEach(([text, strong]) => {
+    if (!strong) {
+      headline.appendChild(document.createTextNode(text));
+      return;
+    }
+    const span = document.createElement("span");
+    span.className = "steward-consent-strong";
+    span.textContent = text;
+    headline.appendChild(span);
+  });
+  panel.appendChild(headline);
 
   const previewRow = document.createElement("p");
   previewRow.className = "steward-consent-actions";
@@ -3465,7 +3787,7 @@ function stewardConsentOpen(mode, key) {
   allow.addEventListener("click", () => stewardConsentAllow(mode));
   const cancel = document.createElement("button");
   cancel.type = "button";
-  cancel.className = "steward-key";
+  cancel.className = "steward-key steward-consent-cancel";
   const cancelLabel = document.createElement("span");
   cancelLabel.textContent = STEWARD_CONSENT_CANCEL;
   cancel.appendChild(cancelLabel);
@@ -3502,6 +3824,8 @@ function stewardAskGoOffline() {
   stewardConsentCancel(false);
   stewardModePopClose(false);
   if (stewardModesEl) stewardModesEl.hidden = true;
+  /* shortcuts into a prompt that no longer exists are worse than none */
+  stewardRenderSuggestions();
   if (!stewardPromptForm?.isConnected) return;
   const note = document.createElement("p");
   note.className = "steward-offline";
@@ -3526,8 +3850,13 @@ async function stewardAsk(raw) {
   /* the mode is read once, at send: a switch mid-flight cannot relabel this turn */
   const mode = stewardProviderReady(stewardMode) ? stewardMode : "local";
   const turn = stewardOpenTurn(message);
+  /* a shortcut that has been asked leaves the pool for the rest of the session,
+     whether it was clicked or typed */
+  stewardSuggestUse(message);
+  stewardRenderSuggestions();
   stewardAskInFlight = true;
   stewardAskBusy(true);
+  stewardChipSync();
   /* honest: a fetch really is in flight, and scanning is the state that says so.
      On a cloud ask the word line names the destination instead of the default. */
   stewardSet("scanning", Object.hasOwn(STEWARD_ASK_CLOUD_LINES, mode) ? STEWARD_ASK_CLOUD_LINES[mode] : "");
@@ -3535,6 +3864,10 @@ async function stewardAsk(raw) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), STEWARD_ASK_TIMEOUT_MS);
   let offline = false;
+  /* the receipt's time slot is measured here, on this machine — the wire is
+     never asked how long it took */
+  const started = typeof performance === "object" ? performance.now() : Date.now();
+  const elapsed = () => (typeof performance === "object" ? performance.now() : Date.now()) - started;
 
   try {
     const response = await fetch("/api/assistant", {
@@ -3549,33 +3882,50 @@ async function stewardAsk(raw) {
       /* the key is missing, not the assistant — say which, and fall back to the
          only mode that never needed a key */
       stewardReplyLine(turn, STEWARD_ASK_UNCONFIGURED, "unavailable");
+      stewardExpressUnavailable();
       stewardModeApply("local");
     } else if (response.status === 501 || response.status === 404) {
       offline = true;
       stewardReplyLine(turn, STEWARD_ASK_OFFLINE, "unavailable");
+      stewardExpressUnavailable();
     } else if (!response.ok) {
       stewardReplyLine(turn, STEWARD_ASK_FAILURE, "unavailable");
+      stewardExpressUnavailable();
     } else {
       const envelope = await response.json();
       const text = typeof envelope?.message === "string" ? envelope.message.trim() : "";
       if (!text) {
         stewardReplyLine(turn, STEWARD_ASK_FAILURE, "unavailable");
+        stewardExpressUnavailable();
       } else {
         stewardReplyLine(turn, text, envelope.epistemicState);
-        stewardReceiptLine(turn, envelope);
+        /* the keycap sits under the answer; the receipt closes the turn */
         stewardActionKey(turn, envelope.nextStep);
+        stewardReceiptLine(turn, envelope, { elapsed: elapsed(), requested: mode });
         stewardExpress(envelope?.presentation?.expression);
+        /* what he knows outranks what he was told to look like: an inferred or
+           unavailable answer sets its own read, on the eyes only */
+        if (envelope?.epistemicState === "inferred") {
+          stewardExpressWrite("watchful", STEWARD_EXPRESSION_HOLD.watchful);
+        } else if (envelope?.epistemicState === "unavailable") {
+          stewardExpressUnavailable();
+        }
         /* the honesty cue wins the eyes: a cloud ask that came back local is
            the one thing the character should not look calm about */
-        if (envelope?.fallbackUsed === true) stewardExpressFallback();
+        if (envelope?.fallbackUsed === true) {
+          stewardExpressFallback();
+          stewardChipFlashFallback();
+        }
       }
     }
   } catch {
     /* a dropped connection, a timeout, a body that is not json — one line, no retry */
     stewardReplyLine(turn, STEWARD_ASK_FAILURE, "unavailable");
+    stewardExpressUnavailable();
   } finally {
     clearTimeout(timer);
     stewardAskInFlight = false;
+    stewardChipSync();
     stewardAskSettle();
     if (offline) stewardAskGoOffline();
     else {

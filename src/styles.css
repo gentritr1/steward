@@ -22,6 +22,15 @@
   --text-2: oklch(0.8 0.02 264);
   --text-3: oklch(0.66 0.022 264);
 
+  /* the instrument slate · markers, receipts and every 10–12px annotation in
+     the shell. One token; the lighter and darker slates the kit asks for are
+     mixed from it at the point of use rather than becoming three tokens.
+     L is 0.62 rather than the 0.60 the kit implies: at 0.60 it renders #718295
+     and lands at 4.35:1 on --deck, under the 4.5 a 10px receipt needs. 0.62 is
+     #77889b — still the #7387a3/#5c7594 family — at 4.72 on --deck, 5.46 on
+     --well, 5.27 on --void. */
+  --slate: oklch(0.62 0.035 250);
+
   /* signals */
   --signal: oklch(0.86 0.2 130);
   --plasma: oklch(0.8 0.14 205);
@@ -103,6 +112,9 @@
   --text: #131720;
   --text-2: #3a4150;
   --text-3: #5c6472;
+
+  /* the same slate, lit from outside: 4.59:1 on --well, 5.45:1 on --deck */
+  --slate: #556b8a;
 
   --signal: #6f8f14;
   --plasma: #5b3fd6;
@@ -3692,8 +3704,16 @@ p.timeline-details {
   align-items: flex-end;
   pointer-events: none;
 
-  /* one data-state drives the whole pose — face tokens live here */
-  --eye-h: 10px;
+  /* one data-state drives the whole pose — face tokens live here.
+
+     The expression sheet is drawn against a 48px face, so the eye tokens are
+     unitless and --u carries both the unit and the badge's own scale: at 48px
+     --u is 1px and the sheet's numbers are literal; at 56px it is 1.1667px and
+     every shape grows by the same factor. Ratios, not absolutes. */
+  --u: 1px;
+  --eye-w: 9;
+  --eye-h: 13;
+  --eye-gap: 7;
   --eye-o: 1;
   --eye-color: var(--signal);
   --mouth-h: 0px;
@@ -3820,23 +3840,25 @@ p.timeline-details {
 .steward-eye {
   position: absolute;
   top: calc(32% + 5px);
-  width: 19%;
-  height: var(--eye-h);
-  margin-top: calc(var(--eye-h) / -2);
+  width: calc(var(--eye-w) * var(--u));
+  height: calc(var(--eye-h) * var(--u));
+  margin-top: calc(var(--eye-h) * var(--u) / -2);
   border-radius: 2px;
   color: var(--eye-color);
   background: currentColor;
   opacity: var(--eye-o);
   box-shadow: 0 0 8px currentColor;
-  transition: height 180ms var(--ease-entrance);
+  transition: height 180ms var(--ease-entrance), width 180ms var(--ease-entrance);
 }
 
+/* the pair is centred on the face, so widening the gap moves both eyes
+   outward rather than sliding the face sideways */
 .steward-eye:first-child {
-  left: 24%;
+  left: calc(50% - var(--eye-gap) * var(--u) / 2 - var(--eye-w) * var(--u));
 }
 
 .steward-eye:last-child {
-  left: 57%;
+  left: calc(50% + var(--eye-gap) * var(--u) / 2);
 }
 
 /* mouth — a dark slot cut into the body, only when the state uses it */
@@ -3887,13 +3909,15 @@ p.timeline-details {
 
 /* ---- the state bank · pose tokens ---- */
 
+/* in flight · the eyes narrow to 5 wide and the scan bar does the rest */
 .steward-dock[data-state="scanning"] {
+  --eye-w: 5;
   --mouth-h: 2px;
   --mouth-o: 1;
 }
 
 .steward-dock[data-state="found"] {
-  --eye-h: 12px;
+  --eye-h: 12;
   --mouth-h: 6px;
   --mouth-o: 1;
 }
@@ -3904,13 +3928,13 @@ p.timeline-details {
 }
 
 .steward-dock[data-state="briefing"] {
-  --eye-h: 9px;
+  --eye-h: 9;
   --mouth-h: 5px;
   --mouth-o: 1;
 }
 
 .steward-dock[data-state="holding"] {
-  --eye-h: 7px;
+  --eye-h: 7;
   --eye-color: var(--amber);
   --mouth-h: 2px;
   --mouth-w: 10px;
@@ -3924,13 +3948,13 @@ p.timeline-details {
 }
 
 .steward-dock[data-state="refuse-repeat"] {
-  --eye-h: 4px;
+  --eye-h: 4;
   --mouth-h: 2px;
   --mouth-o: 1;
 }
 
 .steward-dock[data-state="celebrating"] {
-  --eye-h: 12px;
+  --eye-h: 12;
   --eye-color: var(--amber);
   --mouth-h: 7px;
   --mouth-o: 1;
@@ -3938,7 +3962,7 @@ p.timeline-details {
 
 /* the charge: he goes still and narrows his eyes while you decide */
 .steward-dock[data-state="charging"] {
-  --eye-h: 7px;
+  --eye-h: 7;
   --eye-color: var(--amber);
   --mouth-h: 2px;
   --mouth-w: 12px;
@@ -3947,13 +3971,13 @@ p.timeline-details {
 
 /* armed: wide open, waiting for the release */
 .steward-dock[data-state="armed"] {
-  --eye-h: 13px;
+  --eye-h: 13;
   --mouth-h: 4px;
   --mouth-o: 1;
 }
 
 .steward-dock[data-state="asleep"] {
-  --eye-h: 2px;
+  --eye-h: 2;
   --eye-o: 0.5;
   --mouth-h: 4px;
   --mouth-o: 1;
@@ -3965,7 +3989,7 @@ p.timeline-details {
 }
 
 .steward-dock[data-state="full"] {
-  --eye-h: 9px;
+  --eye-h: 9;
   --eye-color: var(--coral);
   --cell-color: var(--coral);
   --mouth-h: 3px;
@@ -3981,20 +4005,20 @@ p.timeline-details {
 
 /* empty-data pose · awake but with nothing to report */
 .steward-dock[data-state="bored"] {
-  --eye-h: 5px;
+  --eye-h: 5;
   --mouth-h: 2px;
   --mouth-o: 1;
 }
 
 .steward-dock[data-state="logged"] {
-  --eye-h: 12px;
+  --eye-h: 12;
   --mouth-h: 6px;
   --mouth-o: 1;
 }
 
 /* one blink, after the gaze gives up */
 .steward-dock.is-blink {
-  --eye-h: 2px;
+  --eye-h: 2;
 }
 
 /* ---- one motion at a time — a single data-state drives one body animation ---- */
@@ -4297,57 +4321,64 @@ p.timeline-details {
    at a time; the conversation log inside ASK is never re-created, so switching
    away and back cannot cost a turn. */
 
+/* two labels and a rule, 50/50 at every width. No fill, no chrome: the
+   underline is the whole state, and the switch has no transition at all —
+   a tab that fades is a tab you wait for. */
 .steward-tabs {
   display: flex;
   flex: none;
-  gap: 2px;
-  padding: 2px;
-  background: var(--well);
-  border: 1px solid var(--rule);
-  border-radius: var(--r-sm);
+  gap: 0;
 }
 
 .steward-tab {
-  flex: 1;
-  padding: 5px 8px;
+  flex: 1 1 50%;
+  width: 50%;
+  min-width: 0;
+  height: 34px;
+  padding: 0;
   border: 0;
-  border-radius: var(--r-xs);
+  border-radius: 0;
   background: transparent;
   font-family: var(--font-mono);
-  font-size: 0.55rem;
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.09em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--text-3);
-  transition: background var(--d-ui) var(--ease-move), color var(--d-ui) var(--ease-move);
+  color: var(--slate);
+  box-shadow: inset 0 -1px 0 var(--rule);
+  transition: color var(--d-fast) var(--ease-move);
 }
 
 .steward-tab[aria-selected="true"] {
-  background: var(--deck-raised);
-  box-shadow: inset 0 0 0 1px var(--rule-bright);
-  color: var(--signal);
+  background: transparent;
+  color: var(--text);
+  box-shadow: inset 0 -2px 0 var(--signal);
 }
 
 @media (hover: hover) and (pointer: fine) {
   .steward-tab:hover {
-    color: var(--text);
+    color: var(--text-2);
   }
 }
 
+@media (max-width: 375px) {
+  .steward-tab {
+    height: 40px;
+  }
+}
+
+/* the kit's 34px is a cursor measurement; a finger keeps the floor it had */
 @media (pointer: coarse) {
   .steward-tab {
-    min-height: 40px;
+    height: 40px;
   }
 }
 
-/* the switch is instant: opacity only, which is why reduced motion needs no
-   exception for it. The animation replays every time `hidden` comes off. */
 .steward-tabpanel {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
   min-height: 0;
-  animation: steward-fade-in 120ms var(--ease-move) both;
 }
 
 .steward-tabpanel[hidden] {
@@ -4404,31 +4435,54 @@ p.timeline-details {
   list-style: none;
 }
 
-/* one fixed line per candidate. The keys hold their own width and the name
-   gives way — a row may never wrap its buttons onto a second line, at any
-   width, for any label. */
+/* one fixed line per candidate, on a fixed grid: the three columns on the right
+   never move, whatever the name is, so the eye can run straight down the sizes
+   and the caps. The strip is raised out of the recessed panel and squared off —
+   no radius, one hairline. */
 .steward-shell-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  grid-template-columns: minmax(0, 1fr) 58px 76px 68px;
   align-items: center;
-  gap: 8px;
-  padding: 5px 0;
-  border-top: 1px solid color-mix(in oklch, var(--rule) 55%, transparent);
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 6px;
+  background: var(--deck);
+  border: 0;
+  border-bottom: 1px solid var(--rule);
+  border-radius: 0;
 }
 
 .steward-shell-name {
   grid-area: 1 / 1;
+  display: flex;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text);
 }
 
+/* the head gives way; the last path segment is pinned and only clips when it
+   alone cannot fit */
+.steward-name-head {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.steward-name-tail {
+  flex: 0 0 auto;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* a size is a number, never a verdict — it is never coloured */
 .steward-shell-size {
   grid-area: 1 / 2;
+  justify-self: end;
   white-space: nowrap;
-  color: var(--text-3);
+  text-align: right;
+  color: var(--text-2);
 }
 
 .steward-shell-hold {
@@ -4437,6 +4491,12 @@ p.timeline-details {
 
 .steward-shell-show {
   grid-area: 1 / 4;
+}
+
+@media (max-width: 375px) {
+  .steward-shell-row {
+    min-height: 48px;
+  }
 }
 
 .steward-key {
@@ -4551,6 +4611,87 @@ p.timeline-details {
   }
 }
 
+/* ---- the hold cap is a gauge, not a button ----
+
+   At rest a 2px lime floor sits at the bottom of the cap: the tell that this
+   control charges, readable before anything is pressed. The charge is the floor
+   rising to the ceiling over 640ms, linear, bottom-up — the direction a tank
+   fills. The label flips to dark ink at the moment the fill passes it (half the
+   travel, so 320ms in), and early release drops the fill in 120ms with nothing
+   filed. The row never leaves the list: our undo is un-toggling the same cap,
+   and a row that flew away would have nothing left to un-toggle. */
+/* the two caps are fixed boxes so the row never re-flows. Declared after
+   .steward-key on purpose: its `border` shorthand would otherwise reset the
+   border colour these two set. */
+.steward-shell-hold,
+.steward-shell-show {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  min-height: 0;
+  min-width: 0;
+  padding: 0;
+  overflow: visible;
+  box-shadow: none;
+}
+
+.steward-shell-hold {
+  width: 76px;
+  border-color: var(--slate);
+}
+
+.steward-shell-show {
+  width: 68px;
+  border-color: var(--rule);
+  color: color-mix(in oklch, var(--slate) 62%, var(--text));
+}
+
+/* a 28px cap is the kit's drawing; a finger still needs 44. The hit area is
+   grown with a pseudo-element so the gauge keeps its proportions and the
+   target keeps its size. */
+@media (pointer: coarse) {
+  .steward-shell-hold::after,
+  .steward-shell-show::after {
+    content: "";
+    position: absolute;
+    inset-block: -8px;
+    inset-inline: 0;
+  }
+}
+
+.steward-shell-hold::before {
+  inset: auto 0 0 0;
+  height: 2px;
+  border-radius: 0 0 2px 2px;
+  background: var(--signal);
+  opacity: 0.3;
+  transform: none;
+  transition: height 120ms linear, opacity 120ms linear;
+}
+
+.steward-shell-hold.is-charging::before {
+  height: 100%;
+  border-radius: 2px;
+  transition: height 640ms linear;
+}
+
+.steward-shell-hold.is-charging > span {
+  color: var(--on-signal);
+  transition: color 0ms linear 320ms;
+}
+
+.steward-shell-hold.is-armed::before {
+  height: 100%;
+  opacity: 0.85;
+  transition: none;
+}
+
+.steward-shell-hold.is-armed > span {
+  color: var(--on-signal);
+  transition: none;
+}
+
 .steward-shell-empty {
   margin: 6px 0 0;
 }
@@ -4579,9 +4720,9 @@ p.timeline-details {
   flex: none;
   margin: 0;
   padding-top: 6px;
-  font-size: 0.58rem;
+  font-size: 10px;
   letter-spacing: 0.03em;
-  color: var(--signal);
+  color: var(--slate);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -4589,6 +4730,84 @@ p.timeline-details {
 
 .steward-status[hidden] {
   display: none;
+}
+
+/* ---- the preroll · the empty state is a reading ----
+   Three dim lines of what was actually measured, so a prompt nobody has typed
+   into yet is still an instrument. Gone at the first turn, for the session. */
+.steward-preroll {
+  flex: none;
+  font-size: 10px;
+  line-height: 1.5;
+  letter-spacing: 0.04em;
+  color: var(--slate);
+}
+
+.steward-preroll[hidden] {
+  display: none;
+}
+
+.steward-preroll-line {
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---- the shortcuts · two at most ----
+   Keycaps, not a menu. They are the first thing to go when the shell narrows:
+   the prompt they stand above can always be typed into. */
+.steward-suggest {
+  display: flex;
+  flex: none;
+  flex-wrap: nowrap;
+  gap: 4px;
+  min-width: 0;
+}
+
+.steward-suggest[hidden] {
+  display: none;
+}
+
+.steward-suggest-key {
+  display: flex;
+  align-items: center;
+  flex: 0 1 auto;
+  min-width: 0;
+  height: 22px;
+  min-height: 0;
+  padding: 0 7px;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  /* the clip lives on the label so the button can grow a hit area outside itself */
+  overflow: visible;
+  color: color-mix(in oklch, var(--slate) 62%, var(--text));
+}
+
+.steward-suggest-key > span {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* the chip keeps the kit's 22px; the finger gets its 44 from a hit extender */
+@media (pointer: coarse) {
+  .steward-suggest-key::after {
+    content: "";
+    position: absolute;
+    inset-block: -11px;
+    inset-inline: 0;
+  }
+}
+
+@media (max-width: 374px) {
+  .steward-suggest {
+    display: none;
+  }
 }
 
 /* ---- tier 3 · the conversation ----
@@ -4611,12 +4830,17 @@ p.timeline-details {
   color: var(--text-2);
 }
 
+/* the log window is a fixed height, not a share of the viewport: the shell has
+   to be the same instrument every time it opens. 190px at 375, 148px at 320.
+   The top 24px fade says "there is more above" without a scrollbar saying it. */
 .steward-convo-log {
   flex: 1 1 auto;
   min-height: 0;
   max-height: 190px;
   overflow-y: auto;
   overscroll-behavior: contain;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 24px);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 24px);
 }
 
 /* an empty log takes no room at all — the shell opens at its old height */
@@ -4632,7 +4856,7 @@ p.timeline-details {
 }
 
 .steward-turn {
-  margin: 0 0 8px;
+  margin: 0 0 12px;
   animation: steward-turn-in 200ms cubic-bezier(0.23, 1, 0.32, 1) both;
 }
 
@@ -4651,38 +4875,121 @@ p.timeline-details {
   }
 }
 
+/* ---- the anatomy of one turn ----
+
+   you-line 12px · answer 13px · keycap · receipt 10px, and four gaps that are
+   the whole rhythm: 4 under the question, 2 under the answer to the cap, 3 to
+   the receipt, 12 between turns. The question sits in a 30px label gutter, the
+   answer in a 14px marker gutter, and the cap and the receipt indent 20px to
+   land under the answer's own column. */
+
 .steward-turn-you,
 .steward-turn-reply {
   margin: 0;
+  display: grid;
+  align-items: baseline;
   overflow-wrap: anywhere;
 }
 
 .steward-turn-you {
-  color: var(--text-3);
+  grid-template-columns: 30px minmax(0, 1fr);
+  font-size: 12px;
+  line-height: 1.35;
+  color: color-mix(in oklch, var(--slate) 62%, var(--text));
+}
+
+.steward-turn-label {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: var(--slate);
 }
 
 .steward-turn-reply {
+  grid-template-columns: 14px minmax(0, 1fr);
+  margin-top: 4px;
+  font-size: 13px;
+  line-height: 1.5;
   color: var(--text);
 }
 
+/* ---- the epistemic marker ----
+   One glyph in the gutter says how the answer was arrived at. The answer itself
+   is never coloured: colour on a sentence is a second thing to decode. */
 .steward-turn-mark {
-  color: var(--signal);
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  height: 1em;
+  font-size: 13px;
+  line-height: 1;
 }
 
-/* anything that is not a direct measurement carries its own mark */
-.steward-turn-epistemic {
+/* measured · a 4px dot, drawn rather than typeset so it holds its size */
+.steward-turn-mark[data-mark="measured"]::before {
+  content: "";
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--signal);
+}
+
+.steward-turn-mark[data-mark="inferred"] {
+  color: color-mix(in oklch, var(--slate) 62%, var(--text));
+}
+
+.steward-turn-mark[data-mark="unavailable"] {
+  color: var(--slate);
+}
+
+.steward-turn-mark[data-mark="simulated"] {
+  color: var(--violet);
+}
+
+/* ---- history compression ----
+   The newest turn keeps its receipt. Older turns hand the room back and are one
+   question and one answer — about 52px each. */
+.steward-receipt {
+  margin: 3px 0 0 20px;
+  font-size: 10px;
+  line-height: 1.4;
+  letter-spacing: 0.06em;
+  color: var(--slate);
+}
+
+.steward-turn:not(:last-child) .steward-receipt {
+  display: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .steward-turn:hover .steward-receipt {
+    display: block;
+  }
+}
+
+/* a finger has no hover, so a tap on the turn does the same job */
+.steward-turn.is-revealed .steward-receipt {
+  display: block;
+}
+
+/* the fallback is disclosed on the receipt and nowhere else */
+.steward-receipt.is-fallback {
+  margin-left: 16px;
+  padding-left: 3px;
+  border-left: 1px solid var(--amber);
   color: var(--amber);
 }
 
-.steward-receipt {
-  margin: 2px 0 0;
-  font-size: 0.55rem;
-  letter-spacing: 0.05em;
-  color: var(--text-3);
+.steward-turn-action {
+  margin: 2px 0 0 20px;
 }
 
-.steward-turn-action {
-  margin: 5px 0 0;
+.steward-turn-action .steward-key {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  min-height: 0;
+  padding: 0 8px;
+  font-size: 10px;
 }
 
 /* ---- the mode chip ----
@@ -4700,8 +5007,90 @@ p.timeline-details {
   display: none;
 }
 
+/* ---- the chip's five states ----
+   Local is the only state that colours its own word — the deck's one claim that
+   nothing is leaving. Cloud is a white word with a lime dot: lit, not louder.
+   In flight, a 2px lime sweep runs under it. After a fallback it goes amber for
+   1.6s and comes back; it never stays amber. With no key at all it dims and
+   dashes but stays exactly where it was and stays clickable — the picker behind
+   it is where "no key" is written down. */
+
 .steward-mode-chip {
+  position: relative;
   letter-spacing: 0.08em;
+  overflow: visible;
+}
+
+/* the chip never charges, so its ::before is free to be the sweep track */
+.steward-mode-chip::before {
+  display: none;
+}
+
+.steward-mode-chip[data-chip-state="local"] {
+  color: var(--signal);
+  border-color: var(--signal);
+}
+
+.steward-mode-chip[data-chip-state="cloud"] {
+  color: var(--text);
+  border-color: var(--slate);
+  padding-right: 14px;
+}
+
+/* cloud lit · one lime dot, no logo, no provider hue */
+.steward-mode-chip[data-chip-state="cloud"]::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: 5px;
+  width: 4px;
+  height: 4px;
+  margin-top: -2px;
+  border-radius: 50%;
+  background: var(--signal);
+}
+
+.steward-mode-chip[data-chip-state="no-key"] {
+  opacity: 0.38;
+  border-style: dashed;
+  border-color: var(--slate);
+  color: var(--text-2);
+}
+
+.steward-mode-chip[data-chip-state="fallback"] {
+  color: var(--amber);
+  border-color: var(--amber);
+}
+
+.steward-mode-chip[data-chip-state="in-flight"]::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -3px;
+  height: 2px;
+  background: var(--signal);
+  transform-origin: left;
+  animation: steward-chip-sweep 900ms linear infinite;
+}
+
+@keyframes steward-chip-sweep {
+  0% {
+    transform: scaleX(0);
+    transform-origin: left;
+  }
+  50% {
+    transform: scaleX(1);
+    transform-origin: left;
+  }
+  51% {
+    transform: scaleX(1);
+    transform-origin: right;
+  }
+  100% {
+    transform: scaleX(0);
+    transform-origin: right;
+  }
 }
 
 /* the picker stands above the chip, inside the shell's own clip — one row of
@@ -4723,9 +5112,31 @@ p.timeline-details {
   display: none;
 }
 
+/* one row per engine, each with a note column: a row that cannot be chosen has
+   to say why in words, not only by being dim */
 .steward-mode-keys {
   display: flex;
+  flex-direction: column;
   gap: 4px;
+  min-width: 168px;
+}
+
+.steward-mode-key {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-height: 28px;
+  text-align: left;
+}
+
+.steward-mode-note {
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+  color: var(--slate);
 }
 
 .steward-mode-key[aria-checked="true"] {
@@ -4733,9 +5144,9 @@ p.timeline-details {
   border-color: var(--signal);
 }
 
-/* the dim is the whole message: no key, no mode — the title says why */
+/* the dim plus the note is the whole message: no key, no mode */
 .steward-mode-key[disabled] {
-  opacity: 0.35;
+  opacity: 0.38;
 }
 
 /* ---- the consent gate ----
@@ -4755,21 +5166,25 @@ p.timeline-details {
    view, and anything still too tall scrolls inside the panel itself */
 .steward-shell-inner.is-consenting .steward-shell-panel,
 .steward-shell-inner.is-consenting .steward-convo-log,
+.steward-shell-inner.is-consenting .steward-preroll,
+.steward-shell-inner.is-consenting .steward-suggest,
 .steward-shell-inner.is-consenting .steward-status,
 .steward-shell-inner.is-consenting .steward-tabs {
   display: none;
 }
 
+/* no amber and no icons: a panel that looks like a warning gets dismissed like
+   one. This is a sentence to read, a table to inspect, and two equal choices. */
 .steward-consent-panel {
   display: grid;
-  gap: 6px;
+  gap: 8px;
   max-height: min(360px, 46vh);
   overflow-y: auto;
   overscroll-behavior: contain;
   margin-top: 8px;
-  padding: 8px;
+  padding: 10px;
   background: var(--deck);
-  border: 1px solid var(--amber);
+  border: 1px solid var(--rule);
   border-radius: var(--r-sm);
   animation: steward-fade-in 180ms var(--ease-entrance) both;
 }
@@ -4779,13 +5194,31 @@ p.timeline-details {
 }
 
 .steward-consent-head {
-  font-size: 0.55rem;
-  letter-spacing: 0.09em;
+  font-size: 10px;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--amber);
+  color: var(--slate);
 }
 
 .steward-consent-provider {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+
+/* the headline · body type at reading size. The two phrases that decide the
+   answer are one weight step up, and nothing else is doing any work. */
+.steward-consent-headline {
+  font-family: var(--font-body);
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--text-2);
+}
+
+.steward-consent-strong {
   font-weight: 700;
   color: var(--text);
 }
@@ -4795,23 +5228,26 @@ p.timeline-details {
   line-height: 1.45;
 }
 
+/* the retention wording is the truth we can stand behind, not the reassuring
+   version — so it is set plainly and given no emphasis at all */
 .steward-consent-retention {
-  font-size: 0.58rem;
+  font-family: var(--font-mono);
+  font-size: 11px;
   line-height: 1.45;
-  color: var(--text-3);
+  color: color-mix(in oklch, var(--slate) 62%, var(--text));
 }
 
 /* the packet, as text, in its own scroller — nothing here is interpreted */
 .steward-consent-well {
-  max-height: 108px;
+  max-height: 110px;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 6px;
+  padding: 0;
   background: var(--well);
   border: 1px solid var(--rule);
   border-radius: var(--r-xs);
-  font-size: 0.55rem;
-  line-height: 1.5;
+  font-family: var(--font-mono);
+  font-size: 11px;
   color: var(--text-2);
   overflow-wrap: anywhere;
 }
@@ -4820,14 +5256,73 @@ p.timeline-details {
   display: none;
 }
 
+/* two columns, fixed: the eye runs down the ids and the values clip */
 .steward-consent-row {
+  display: grid;
+  grid-template-columns: 78px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  height: 22px;
   margin: 0;
+  padding: 0 6px;
 }
 
+.steward-consent-id {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--slate);
+}
+
+.steward-consent-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-2);
+}
+
+/* two choices of equal size and equal weight, side by side at every width.
+   ALLOW is a lime hairline and lime text — never a filled button: a filled
+   default is a thumb heading for it before the sentence has been read. */
 .steward-consent-actions {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 6px;
+}
+
+.steward-consent-actions .steward-key {
+  flex: 1 1 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 44px;
+  min-height: 0;
+  min-width: 0;
+  padding: 0 8px;
+}
+
+.steward-consent-allow {
+  color: var(--signal);
+  border-color: var(--signal);
+  background: var(--deck-raised);
+}
+
+.steward-consent-cancel {
+  color: var(--text-2);
+  border-color: var(--slate);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .steward-consent-cancel:hover {
+    color: var(--text);
+    border-color: var(--rule-bright);
+  }
+}
+
+@media (max-width: 375px) {
+  .steward-consent-actions .steward-key {
+    height: 48px;
+  }
 }
 
 .steward-consent-allow[aria-disabled="true"],
@@ -4891,39 +5386,83 @@ p.timeline-details {
    move the eyes, and JS removes it after ~7s. It is declared after the state
    bank so it wins the tie on equal specificity. */
 
+/* calm · 9×13, the resting read. The blink is the only ambient motion on the
+   face and it runs while you type: typing is not an event he reacts to. */
 .steward-dock[data-expression="calm"] {
-  --eye-h: 10px;
+  --eye-w: 9;
+  --eye-h: 13;
   --eye-color: var(--signal);
 }
 
+.steward-dock[data-expression="calm"] .steward-eye,
+.steward-dock[data-state="resting"]:not([data-expression]) .steward-eye {
+  animation: steward-eye-blink 5.2s linear infinite;
+}
+
+/* pleased · 9×7, a squint. 260ms in, then 1.4s of holding it. */
 .steward-dock[data-expression="pleased"] {
-  --eye-h: 13px;
+  --eye-w: 9;
+  --eye-h: 7;
   --eye-color: var(--signal);
 }
 
+.steward-dock[data-expression="pleased"] .steward-eye {
+  transition-duration: 260ms;
+}
+
+/* watchful · 9×17, wide open and deliberately not blinking */
 .steward-dock[data-expression="watchful"] {
-  --eye-h: 8px;
+  --eye-w: 9;
+  --eye-h: 17;
 }
 
-/* the lean is the eye pair tilting — the body never moves, and the gaze
-   transform on .steward-face stays untouched */
-.steward-dock[data-expression="watchful"] .steward-eye:first-child {
-  transform: translateY(1.5px);
-}
-
-.steward-dock[data-expression="watchful"] .steward-eye:last-child {
-  transform: translateY(-1.5px);
-}
-
-.steward-dock[data-expression="concerned"] {
-  --eye-h: 7px;
-  --eye-color: var(--amber);
-}
-
-/* the fallback read · the preview pose's amber, on the eyes only. No envelope
-   can request it; the client sets it when a cloud ask came back local. */
+/* concerned · 7×13 amber, the gap widens and a soft glow rises once */
+.steward-dock[data-expression="concerned"],
 .steward-dock[data-expression="fallback"] {
+  --eye-w: 7;
+  --eye-h: 13;
+  --eye-gap: 11;
   --eye-color: var(--amber);
+}
+
+.steward-dock[data-expression="concerned"] .steward-eye,
+.steward-dock[data-expression="fallback"] .steward-eye {
+  animation: steward-eye-glow 1.8s ease-in-out 1;
+}
+
+/* unavailable · 9×2 slate, static, and it holds until the next question.
+   Like `fallback` it sits outside the server allowlist — no envelope can ask
+   for the face of an answer it did not fail to give. */
+.steward-dock[data-expression="unavailable"] {
+  --eye-w: 9;
+  --eye-h: 2;
+  --eye-color: var(--slate);
+}
+
+@keyframes steward-eye-blink {
+  0%,
+  96.5% {
+    height: calc(var(--eye-h) * var(--u));
+    margin-top: calc(var(--eye-h) * var(--u) / -2);
+  }
+  98% {
+    height: calc(2 * var(--u));
+    margin-top: calc(-1 * var(--u));
+  }
+  100% {
+    height: calc(var(--eye-h) * var(--u));
+    margin-top: calc(var(--eye-h) * var(--u) / -2);
+  }
+}
+
+@keyframes steward-eye-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 8px currentColor;
+  }
+  50% {
+    box-shadow: 0 0 16px currentColor;
+  }
 }
 
 @media (max-width: 760px) {
@@ -4946,6 +5485,12 @@ p.timeline-details {
   .steward-body {
     width: 56px;
     height: 56px;
+  }
+
+  /* the face grows with the badge: 56/48 = 1.1667, applied to every eye shape
+     at once so the expression sheet keeps its proportions */
+  .steward-dock {
+    --u: 1.1667px;
   }
 
   .steward-cells {
@@ -4982,8 +5527,10 @@ p.timeline-details {
     max-height: 46vh;
   }
 
+  /* the log window is a fixed height at every phone width — the shell has to
+     be the same instrument each time it opens, not a share of the viewport */
   .steward-convo-log {
-    max-height: 40vh;
+    max-height: 190px;
   }
 
   /* the scope needs a pointer and horizontal room; the strip carries the same
@@ -4994,6 +5541,14 @@ p.timeline-details {
 
   .trend-strip {
     display: flex;
+  }
+}
+
+/* the narrowest column the deck supports: the log gives up 42px so the prompt
+   row and the status line are never the thing that scrolls away */
+@media (max-width: 320px) {
+  .steward-convo-log {
+    max-height: 148px;
   }
 }
 
@@ -5054,8 +5609,9 @@ p.timeline-details {
     transition: none;
   }
 
-  /* the charge has no ceremony left: the fill appears at the moment it arms,
-     never travelling, and never claiming to be armed before it is */
+  /* the charge has no ceremony left: the gauge stays at its resting floor for
+     the whole 640ms wait and steps to full in one 120ms move at the moment it
+     actually arms. It never travels, and never claims to be armed before it is. */
   .steward-key::before,
   .steward-key.is-charging::before,
   .steward-key.is-armed::before {
@@ -5064,6 +5620,19 @@ p.timeline-details {
 
   .steward-key.is-charging:not(.is-armed)::before {
     transform: scaleX(0);
+  }
+
+  .steward-shell-hold.is-charging:not(.is-armed)::before {
+    height: 2px;
+  }
+
+  .steward-shell-hold.is-charging:not(.is-armed) > span {
+    color: inherit;
+  }
+
+  .steward-shell-hold.is-armed::before {
+    height: 100%;
+    transition: height 120ms linear;
   }
 
   .steward-stamp {
@@ -5219,10 +5788,19 @@ p.timeline-details {
     transition: none;
   }
 
+  /* the shapes stay, the motion goes: no blink, no glow, no sweep. Every state
+     still reads from its own silhouette and its own colour. */
   .steward-eye {
-    height: calc(var(--eye-h) * 0.75);
-    margin-top: calc(var(--eye-h) * -0.375);
+    height: calc(var(--eye-h) * var(--u) * 0.75);
+    margin-top: calc(var(--eye-h) * var(--u) * -0.375);
     transition: none;
+    animation: none !important;
+    box-shadow: 0 0 8px currentColor;
+  }
+
+  .steward-mode-chip[data-chip-state="in-flight"]::after {
+    animation: none;
+    transform: none;
   }
 
   .steward-cells i {

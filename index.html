@@ -116,7 +116,12 @@
           >
             <div class="steward-convo" data-steward-convo>
               <div class="steward-convo-log" data-steward-log></div>
+              <!-- the empty state: three dim lines of real readings, replaced by
+                   the first turn and never shown again this session -->
+              <div class="steward-preroll" data-steward-preroll aria-hidden="true" hidden></div>
               <div class="steward-consent" data-steward-consent hidden></div>
+              <!-- code-owned shortcuts, never model-generated: at most two -->
+              <div class="steward-suggest" data-steward-suggest hidden></div>
               <form class="steward-prompt" data-steward-prompt novalidate>
                 <span class="steward-prompt-mark" aria-hidden="true">▸</span>
                 <!-- the mode chip and its picker stay hidden until the server
