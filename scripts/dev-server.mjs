@@ -1,15 +1,52 @@
-import { createReadStream } from "node:fs";
+import { createReadStream, readFileSync } from "node:fs";
 import { realpath, stat } from "node:fs/promises";
 import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { answerLocal } from "../server/steward-assistant.mjs";
 import { buildEvidencePacket } from "../server/steward-context.mjs";
+import { MODES, answerWithProvider, providerAvailability } from "../server/providers/select-provider.mjs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const srcDir = path.join(projectRoot, "src");
 const dataDir = path.join(projectRoot, "public", "data");
+
+/* ---- credentials ----
+
+   Keys live in a .env file that is never committed and never served: the static
+   allowlist below has no route to it, and this parser is the only thing that
+   reads it. It sets a key only if the environment does not already have one, so
+   an explicitly exported variable always wins over a file on disk, and it never
+   prints, logs, or returns a value — only the names it set, which is what a
+   startup line may safely say. */
+export function loadEnvFile(filePath = path.join(projectRoot, ".env")) {
+  let raw;
+  try {
+    raw = readFileSync(filePath, "utf8");
+  } catch {
+    /* no .env is the normal case, not an error */
+    return [];
+  }
+
+  const applied = [];
+  for (const line of raw.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (trimmed.length === 0 || trimmed.startsWith("#")) continue;
+
+    const separator = trimmed.indexOf("=");
+    if (separator <= 0) continue;
+
+    const key = trimmed.slice(0, separator).trim();
+    const value = trimmed.slice(separator + 1).trim();
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) continue;
+    if (Object.hasOwn(process.env, key)) continue;
+
+    process.env[key] = value;
+    applied.push(key);
+  }
+
+  return applied;
+}
 
 const contentTypes = new Map([
   [".css", "text/css; charset=utf-8"],
@@ -160,20 +197,67 @@ async function handleAssistant(request, response) {
     return;
   }
 
-  /* provider identity is the server's to decide. an unconfigured mode is
-     refused here — it never silently falls back to the local answer. */
-  if (parsed.mode !== "local") {
-    sendJson(response, 501, { error: "cloud modes not configured" });
+  /* a mode this build does not implement is a bad request; a mode it implements
+     but has no credential for is a missing capability. the two are different
+     statuses because they call for different fixes. */
+  if (!MODES.includes(parsed.mode)) {
+    sendJson(response, 400, { error: "unsupported mode" });
     return;
   }
 
   try {
     const packet = await buildEvidencePacket(dataDir);
-    const { envelope, provider, model, fallbackUsed, traceId } = answerLocal({ message: parsed.message, packet });
-    sendJson(response, 200, { ...envelope, provider, model, fallbackUsed, traceId });
+    const result = await answerWithProvider({ mode: parsed.mode, message: parsed.message, packet });
+
+    if (result.error === "not_configured") {
+      sendJson(response, 501, { error: "provider not configured", provider: result.provider });
+      return;
+    }
+    if (result.error) {
+      /* the provider refused this server, not this person. no answer is invented. */
+      sendJson(response, 502, { error: "provider unavailable", provider: result.provider });
+      return;
+    }
+
+    const { envelope, provider, model, fallbackUsed, traceId, requestedProvider, fallbackReason } = result;
+    const payload = { ...envelope, provider, model, fallbackUsed, traceId };
+    /* say who was asked and why the answer came from somewhere else. the
+       contract errors behind a fallback stay server-side: they quote the
+       provider's own prose back, and that is not something to echo to a page. */
+    if (fallbackUsed) {
+      payload.requestedProvider = requestedProvider;
+      payload.fallbackReason = fallbackReason;
+    }
+    sendJson(response, 200, payload);
   } catch {
     /* never surface the reason: it would describe local files */
     sendJson(response, 500, { error: "assistant unavailable" });
+  }
+}
+
+/* which providers this server could reach, as three booleans. never a key,
+   never a fragment of one, never a length. */
+function handleProviders(request, response) {
+  if (request.method !== "GET") {
+    notFound(response);
+    return;
+  }
+  sendJson(response, 200, providerAvailability());
+}
+
+/* the evidence packet exactly as an adapter would receive it, so "preview
+   context" in the UI shows the real thing rather than a description of it.
+   It is safe to serve because it is redacted by construction: nothing that
+   builds it ever copies a name, a label, a path, or a line of prose. */
+async function handleContext(request, response) {
+  if (request.method !== "GET") {
+    notFound(response);
+    return;
+  }
+  try {
+    sendJson(response, 200, await buildEvidencePacket(dataDir));
+  } catch {
+    sendJson(response, 500, { error: "context unavailable" });
   }
 }
 
@@ -186,10 +270,12 @@ async function handle(request, response) {
     return;
   }
 
-  /* the api surface is one route; everything else under /api/ is a 404, and
-     the static rules below are left exactly as they were */
+  /* the api surface is three exact routes; everything else under /api/ is a
+     404, and the static rules below are left exactly as they were */
   if (pathname.startsWith("/api/")) {
     if (pathname === "/api/assistant") await handleAssistant(request, response);
+    else if (pathname === "/api/assistant/providers") handleProviders(request, response);
+    else if (pathname === "/api/assistant/context") await handleContext(request, response);
     else notFound(response);
     return;
   }
@@ -235,11 +321,18 @@ export function startServer(port = 4173) {
   });
 }
 
-/* `node scripts/dev-server.mjs` still starts the server; importing it does not */
+/* `node scripts/dev-server.mjs` still starts the server; importing it does not.
+   .env is read here and not at import, so a test that imports startServer gets
+   the environment it set up, never whatever happens to be on this machine. */
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const applied = loadEnvFile();
   const requestedPort = Number.parseInt(process.env.STEWARD_PORT ?? "4173", 10);
   const port = Number.isFinite(requestedPort) ? requestedPort : 4173;
   startServer(port).then(() => {
     console.log(`Steward is available at http://127.0.0.1:${port}`);
+    /* names only. a value never reaches this line. */
+    if (applied.length > 0) console.log(`loaded from .env: ${applied.join(", ")}`);
+    const available = providerAvailability();
+    console.log(`providers: ${Object.entries(available).map(([name, ok]) => `${name} ${ok ? "yes" : "no"}`).join(", ")}`);
   });
 }

@@ -14,6 +14,16 @@ const dataDir = path.join(projectRoot, "public", "data");
 let server;
 
 before(async () => {
+  /* This suite exercises the endpoint's refusal paths, and it must reach the
+     same verdict on a machine that happens to have keys exported as on one that
+     does not — so the keys are removed for the life of this process. The dev
+     server reads .env only from its CLI entry point, never on import, so an
+     imported server starts from exactly this environment and nothing else.
+     Cloud modes are deliberately never driven end-to-end here: that would open
+     a socket. The router is covered against mock transports at module level in
+     provider-router.test.mjs. */
+  delete process.env.OPENAI_API_KEY;
+  delete process.env.ANTHROPIC_API_KEY;
   /* port 0, never 4173: this suite must not touch a dev server the user is running */
   server = await startServer(0);
 });
@@ -84,10 +94,56 @@ test("an unrecognised question still answers, and still validates", async () => 
   assert.equal(payload.nextStep, null);
 });
 
-test("a cloud mode is refused, never quietly answered locally", async () => {
-  const response = await request({ body: JSON.stringify({ message: "how much free space?", mode: "openai" }) });
-  assert.equal(response.status, 501);
-  assert.deepEqual(JSON.parse(response.body), { error: "cloud modes not configured" });
+/* an implemented provider with no credential is a missing capability (501);
+   a mode this build does not implement is a bad request (400). neither one
+   ever answers locally while wearing a cloud provider's name. */
+for (const mode of ["openai", "anthropic"]) {
+  test(`${mode} with no key is refused, never quietly answered locally`, async () => {
+    const response = await request({ body: JSON.stringify({ message: "how much free space?", mode }) });
+    assert.equal(response.status, 501);
+    assert.deepEqual(JSON.parse(response.body), { error: "provider not configured", provider: mode });
+  });
+}
+
+test("a mode this build does not implement is a bad request", async () => {
+  const response = await request({ body: JSON.stringify({ message: "how much free space?", mode: "gemini" }) });
+  assert.equal(response.status, 400);
+  assert.deepEqual(JSON.parse(response.body), { error: "unsupported mode" });
+});
+
+test("GET /api/assistant/providers reports booleans and never key material", async () => {
+  const response = await request({ method: "GET", target: "/api/assistant/providers", contentType: null, body: "" });
+  assert.equal(response.status, 200);
+  assert.match(response.headers, /cache-control: no-store/);
+
+  const payload = JSON.parse(response.body);
+  assert.deepEqual(payload, { local: true, openai: false, anthropic: false });
+  for (const value of Object.values(payload)) assert.equal(typeof value, "boolean");
+});
+
+test("GET /api/assistant/context serves the redacted packet the adapters receive", async () => {
+  const response = await request({ method: "GET", target: "/api/assistant/context", contentType: null, body: "" });
+  assert.equal(response.status, 200);
+  assert.match(response.headers, /cache-control: no-store/);
+
+  const payload = JSON.parse(response.body);
+  assert.deepEqual(Object.keys(payload).sort(), ["evidence", "evidenceIds", "generatedAt", "reclaimItems"]);
+  /* it is the same builder the endpoint answers from, so the two cannot drift */
+  const packet = await buildEvidencePacket(dataDir);
+  assert.deepEqual(payload.evidenceIds, packet.evidenceIds);
+  /* redacted by construction: numbers, slugs, and units only */
+  for (const entry of Object.values(payload.evidence)) {
+    assert.equal(typeof entry.value, "number");
+    assert.deepEqual(Object.keys(entry).sort(), ["kind", "unit", "value"]);
+  }
+  for (const item of payload.reclaimItems) {
+    assert.match(item.id, /^[a-z0-9]+(?:-[a-z0-9]+)*$/);
+  }
+});
+
+test("the two new GET routes are GET-only", async () => {
+  assert.equal((await request({ target: "/api/assistant/providers", body: "{}" })).status, 404);
+  assert.equal((await request({ target: "/api/assistant/context", body: "{}" })).status, 404);
 });
 
 test("a body over 4096 bytes is refused", async () => {

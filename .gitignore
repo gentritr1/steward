@@ -2,3 +2,4 @@ dist/
 data/snapshots/
 public/data/latest.json
 public/data/history.json
+.env*
