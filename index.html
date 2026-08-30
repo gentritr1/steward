@@ -82,35 +82,90 @@
     <div class="steward-dock" id="steward" data-steward data-state="resting" data-shell="closed">
       <div class="steward-shell" data-steward-shell aria-hidden="true" inert>
         <div class="steward-shell-inner">
-          <!-- the brief panel is re-rendered on every refresh; the conversation below it is not -->
-          <div data-steward-shell-body></div>
-          <div class="steward-convo" data-steward-convo>
-            <div class="steward-convo-log" data-steward-log></div>
-            <!-- the mode strip and the consent panel stay hidden until the server
-                 says it can offer more than local — an older server keeps the
-                 deck exactly as it was -->
-            <div class="steward-modes" data-steward-modes hidden>
-              <span class="steward-modes-label mono-label" id="steward-mode-label">mode</span>
-              <div class="steward-mode-keys" role="radiogroup" aria-labelledby="steward-mode-label" data-steward-mode-keys></div>
+          <!-- two panels, one at a time. Switching only flips `hidden`, so the
+               conversation log below is the same node for the whole session. -->
+          <div class="steward-tabs" role="tablist" aria-label="Steward panels" data-steward-tabs>
+            <button
+              class="steward-tab"
+              type="button"
+              role="tab"
+              id="steward-tab-ask"
+              aria-controls="steward-panel-ask"
+              aria-selected="true"
+              tabindex="0"
+              data-steward-tab="ask"
+            >ASK</button>
+            <button
+              class="steward-tab"
+              type="button"
+              role="tab"
+              id="steward-tab-reclaim"
+              aria-controls="steward-panel-reclaim"
+              aria-selected="false"
+              tabindex="-1"
+              data-steward-tab="reclaim"
+            >RECLAIM</button>
+          </div>
+
+          <div
+            class="steward-tabpanel"
+            role="tabpanel"
+            id="steward-panel-ask"
+            aria-labelledby="steward-tab-ask"
+            data-steward-panel="ask"
+          >
+            <div class="steward-convo" data-steward-convo>
+              <div class="steward-convo-log" data-steward-log></div>
+              <div class="steward-consent" data-steward-consent hidden></div>
+              <form class="steward-prompt" data-steward-prompt novalidate>
+                <span class="steward-prompt-mark" aria-hidden="true">▸</span>
+                <!-- the mode chip and its picker stay hidden until the server
+                     says it can offer more than local — an older server keeps
+                     the deck exactly as it was -->
+                <div class="steward-mode" data-steward-modes hidden>
+                  <button
+                    class="steward-key steward-mode-chip"
+                    type="button"
+                    data-steward-mode-chip
+                    aria-haspopup="true"
+                    aria-expanded="false"
+                    aria-label="assistant mode"
+                  ><span data-steward-mode-chip-label>LOCAL</span></button>
+                  <div class="steward-mode-pop" data-steward-mode-pop hidden>
+                    <div class="steward-mode-keys" role="radiogroup" aria-label="assistant mode" data-steward-mode-keys></div>
+                  </div>
+                </div>
+                <label class="sr-only" for="steward-ask-input">Ask Steward</label>
+                <input
+                  class="steward-prompt-input"
+                  id="steward-ask-input"
+                  data-steward-input
+                  type="text"
+                  maxlength="500"
+                  autocomplete="off"
+                  autocapitalize="off"
+                  autocorrect="off"
+                  spellcheck="false"
+                  placeholder="ask about the brief"
+                />
+                <button class="steward-key steward-ask-key" type="submit" data-steward-ask aria-label="Ask Steward"><span>ASK</span></button>
+              </form>
+              <!-- one line: the change since the last reading and how far the
+                   history has come. The long trend sentence lives in CH01. -->
+              <p class="steward-status" data-steward-status hidden></p>
             </div>
-            <div class="steward-consent" data-steward-consent hidden></div>
-            <form class="steward-prompt" data-steward-prompt novalidate>
-              <span class="steward-prompt-mark" aria-hidden="true">▸</span>
-              <label class="sr-only" for="steward-ask-input">Ask Steward</label>
-              <input
-                class="steward-prompt-input"
-                id="steward-ask-input"
-                data-steward-input
-                type="text"
-                maxlength="500"
-                autocomplete="off"
-                autocapitalize="off"
-                autocorrect="off"
-                spellcheck="false"
-                placeholder="ask about the brief"
-              />
-              <button class="steward-key steward-ask-key" type="submit" data-steward-ask aria-label="Ask Steward"><span>ASK</span></button>
-            </form>
+          </div>
+
+          <div
+            class="steward-tabpanel"
+            role="tabpanel"
+            id="steward-panel-reclaim"
+            aria-labelledby="steward-tab-reclaim"
+            data-steward-panel="reclaim"
+            hidden
+          >
+            <!-- re-rendered on every refresh -->
+            <div data-steward-shell-body></div>
           </div>
         </div>
       </div>

@@ -2159,6 +2159,7 @@ const stewardLineEl = stewardDock?.querySelector("[data-steward-line]");
 const stewardFace = stewardDock?.querySelector("[data-steward-face]");
 const stewardShellEl = stewardDock?.querySelector("[data-steward-shell]");
 const stewardShellBody = stewardDock?.querySelector("[data-steward-shell-body]");
+const stewardStatusEl = stewardDock?.querySelector("[data-steward-status]");
 const stewardCells = stewardDock ? [...stewardDock.querySelectorAll("[data-steward-cell]")] : [];
 const stewardFinePointer = window.matchMedia?.("(hover: hover) and (pointer: fine)") || null;
 
@@ -2413,9 +2414,53 @@ function stewardGazeDrop() {
 
 /* ---- the shell (tier 3) ---- */
 
-function stewardTruncate(value, max) {
-  const text = String(value || "").trim();
-  return text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text;
+/* ---- the two panels ----
+
+   ASK and RECLAIM are one tablist over two panels that already exist in the
+   markup. Switching only flips `hidden` — the conversation log node is never
+   re-created, so a half-finished exchange survives every switch. The choice is
+   a module variable: it lasts the session and is deliberately not stored. */
+
+const stewardTabsEl = stewardDock?.querySelector("[data-steward-tabs]");
+const stewardTabKeys = stewardTabsEl ? [...stewardTabsEl.querySelectorAll("[data-steward-tab]")] : [];
+const stewardTabPanels = stewardShellEl ? [...stewardShellEl.querySelectorAll("[data-steward-panel]")] : [];
+
+let stewardTab = "ask";
+
+function stewardTabApply(tab, moveFocus = false) {
+  if (stewardTabKeys.length === 0) return;
+  stewardTab = stewardTabKeys.some((key) => key.dataset.stewardTab === tab) ? tab : "ask";
+  stewardTabKeys.forEach((key) => {
+    const selected = key.dataset.stewardTab === stewardTab;
+    key.setAttribute("aria-selected", String(selected));
+    /* roving tabindex — the tablist is one tab stop, arrows move inside it */
+    key.tabIndex = selected ? 0 : -1;
+    if (selected && moveFocus) key.focus({ preventScroll: true });
+  });
+  stewardTabPanels.forEach((panel) => {
+    panel.hidden = panel.dataset.stewardPanel !== stewardTab;
+  });
+  /* a picker left open on a panel nobody can see is a focus trap with no door */
+  if (stewardTab !== "ask") stewardModePopClose(false);
+}
+
+function stewardTabMove(index, step) {
+  if (stewardTabKeys.length === 0) return;
+  const next = stewardTabKeys[(index + step + stewardTabKeys.length) % stewardTabKeys.length];
+  stewardTabApply(next.dataset.stewardTab, true);
+}
+
+function setupStewardTabs() {
+  stewardTabKeys.forEach((key, index) => {
+    key.addEventListener("click", () => stewardTabApply(key.dataset.stewardTab));
+    key.addEventListener("keydown", (event) => {
+      if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+      event.preventDefault();
+      if (event.key === "Home") stewardTabMove(0, 0);
+      else if (event.key === "End") stewardTabMove(stewardTabKeys.length - 1, 0);
+      else stewardTabMove(index, event.key === "ArrowRight" ? 1 : -1);
+    });
+  });
 }
 
 function stewardCandidates() {
@@ -2449,12 +2494,13 @@ function stewardSyncShellHolds() {
 
    The keycap says "hold" and nothing on it says the gesture wants 640ms of
    stillness. The title carries that for a cursor; the first shell of the
-   session carries it in words for everyone else. Keyboard activation files
-   instantly, so the line says so rather than teaching a gesture the keyboard
-   never performs. Session-scoped on purpose: a module flag, nothing stored. */
+   session carries it in words for everyone else — one dim line, not a
+   paragraph. Keyboard activation files instantly, so the keycap's own title
+   says so rather than spending the line on a gesture the keyboard never
+   performs. Session-scoped on purpose: a module flag, nothing stored. */
 
-const STEWARD_HOLD_TITLE = "press and hold to file it for review";
-const STEWARD_HOLD_HINT = "▸ press and hold a HOLD key to file it — release early to cancel (enter files instantly)";
+const STEWARD_HOLD_TITLE = "press and hold to file — enter files instantly";
+const STEWARD_HOLD_HINT = "▸ hold to file · release early to cancel";
 
 let stewardHintDone = false;
 let stewardHintOn = false;
@@ -2615,16 +2661,40 @@ function stewardBindHold(key, target) {
   });
 }
 
+/* ---- the one status line ----
+
+   The trend sentence and the delta line used to be two paragraphs stacked under
+   the candidates. They are one mono line at the foot of the ASK panel now: what
+   moved since the previous reading, and how far the history has come. Nothing
+   is lost from the product — the long trend sentence still lives in CH01's
+   console panel, which is where it was always written in full. */
+
+const STEWARD_READING_GOAL = 7;
+
+function stewardStatusLine() {
+  const count = validSnapshots(stewardData.history).length;
+  /* below two readings there is no "since last" to report — the count is the news */
+  if (count === 0) return "▸ no readings yet · 0/2 readings";
+  if (count === 1) return "▸ baseline set · 1/2 readings";
+  const { change } = deriveSummary(stewardData.latest, stewardData.history);
+  const move = change === 0
+    ? "no change"
+    : `${change > 0 ? "+" : "−"}${stewardGb(Math.abs(change))} gb`;
+  /* the goal never sits behind the count: a longer history raises its own bar */
+  return `▸ ${move} since last · ${count}/${Math.max(STEWARD_READING_GOAL, count)} readings`;
+}
+
+function stewardRenderStatus() {
+  if (!stewardStatusEl) return;
+  stewardStatusEl.textContent = stewardStatusLine();
+  stewardStatusEl.hidden = false;
+}
+
 function stewardRenderShell() {
   if (!stewardShellBody) return;
   /* fresh nodes each render — no charge timer may outlive the markup it drives */
   stewardChargeCancelAll();
   const items = stewardCandidates();
-  const summary = deriveSummary(stewardData.latest, stewardData.history);
-  const trend = stewardTruncate(stewardData.latest?.trend?.message, 60);
-  const delta = summary.change === 0
-    ? "no change since the last reading"
-    : `${summary.change > 0 ? "+" : "−"}${formatBytes(Math.abs(summary.change))} since the last reading`;
 
   stewardShellBody.innerHTML = `
     <div class="steward-shell-panel">
@@ -2638,19 +2708,18 @@ function stewardRenderShell() {
               <li class="steward-shell-row">
                 <span class="steward-shell-name" title="${escapeHtml(label)}">${escapeHtml(label)}</span>
                 <span class="steward-shell-size">${formatBytes(item?.bytes)}</span>
-                <span class="steward-shell-actions">
-                  <button class="steward-key" type="button" data-steward-hold="${escapeHtml(id)}" aria-pressed="false" title="${STEWARD_HOLD_TITLE}" aria-label="Hold ${escapeHtml(label)} for review"><span data-hold-label>hold</span></button>
-                  <button class="steward-key" type="button" data-steward-show="${escapeHtml(id)}" aria-label="Show ${escapeHtml(label)} in the reclaim bay"><span>show me</span></button>
-                </span>
+                <button class="steward-key steward-shell-hold" type="button" data-steward-hold="${escapeHtml(id)}" aria-pressed="false" title="${STEWARD_HOLD_TITLE}" aria-label="Hold ${escapeHtml(label)} for review"><span data-hold-label>hold</span></button>
+                <button class="steward-key steward-shell-show" type="button" data-steward-show="${escapeHtml(id)}" aria-label="Show ${escapeHtml(label)} in the reclaim bay"><span>show me</span></button>
               </li>
             `;
           }).join("")}
         </ul>
       ` : `<p class="steward-shell-empty">nothing clears the evidence threshold.</p>`}
-      ${trend ? `<p class="steward-shell-trend">${escapeHtml(trend)}</p>` : ""}
-      <p class="steward-shell-delta">▸ ${escapeHtml(delta)}</p>
     </div>
   `;
+
+  /* the status line reads the same data and is redrawn on the same beat */
+  stewardRenderStatus();
 
   /* a refresh mid-shell rebuilds the panel; the hint outlives the markup it sat in */
   stewardHintMount();
@@ -2694,8 +2763,13 @@ function stewardShellOpen() {
   stewardConvoCheck();
   stewardModesCheck();
   stewardHintShow();
-  /* the panel is only clipped, never visibility-hidden, so it can take focus at once */
-  stewardShellEl.querySelector("button:not([disabled])")?.focus({ preventScroll: true });
+  /* the tab he was last on is where he opens — a module variable, per session */
+  stewardTabApply(stewardTab);
+  /* the panel is only clipped, never visibility-hidden, so it can take focus at
+     once. The tablist is the shell's entry point, so focus lands on the tab
+     that is actually selected rather than on whatever button comes first. */
+  const entry = stewardTabKeys.find((key) => key.getAttribute("aria-selected") === "true");
+  (entry || stewardShellEl.querySelector("button:not([disabled])"))?.focus({ preventScroll: true });
 }
 
 function stewardShellClose(returnFocus = true) {
@@ -2704,6 +2778,7 @@ function stewardShellClose(returnFocus = true) {
   /* a consent panel left open is a question with no one in front of it —
      closing the shell answers it the safe way: no */
   stewardConsentCancel(false);
+  stewardModePopClose(false);
   stewardHintDismiss();
   stewardShellOpenState = false;
   const hadFocus = stewardShellEl.contains(document.activeElement);
@@ -3038,12 +3113,16 @@ const STEWARD_CONTEXT_MAX_ROWS = 120;
 
 const stewardShellInner = stewardDock?.querySelector(".steward-shell-inner");
 const stewardModesEl = stewardDock?.querySelector("[data-steward-modes]");
+const stewardModeChip = stewardDock?.querySelector("[data-steward-mode-chip]");
+const stewardModeChipLabel = stewardDock?.querySelector("[data-steward-mode-chip-label]");
+const stewardModePop = stewardDock?.querySelector("[data-steward-mode-pop]");
 const stewardModeKeysEl = stewardDock?.querySelector("[data-steward-mode-keys]");
 const stewardConsentEl = stewardDock?.querySelector("[data-steward-consent]");
 
 let stewardMode = "local";
 let stewardProviders = null;
 let stewardModesChecked = false;
+let stewardModePopOpen = false;
 let stewardConsentPending = null;
 let stewardConsentReturnKey = null;
 
@@ -3057,10 +3136,19 @@ function stewardProviderReady(mode) {
   return Boolean(stewardProviders && stewardProviders[mode] === true);
 }
 
-/* ---- the strip ---- */
+/* ---- the chip and its picker ----
+
+   The mode used to own a full-width row of the shell. It is one keycap on the
+   prompt row now; the same three radios live in a small deck-styled picker that
+   opens above it. Nothing about the consent flow moved — it is simply opened
+   from here. */
 
 function stewardModeKeys() {
   return stewardModeKeysEl ? [...stewardModeKeysEl.querySelectorAll("[data-steward-mode]")] : [];
+}
+
+function stewardModeLabel(mode) {
+  return STEWARD_MODES.find((entry) => entry.mode === mode)?.label || "LOCAL";
 }
 
 function stewardModeSync() {
@@ -3070,6 +3158,65 @@ function stewardModeSync() {
     /* roving tabindex — the group is one tab stop, arrows move inside it */
     key.tabIndex = selected ? 0 : -1;
   });
+  /* the chip is the picker's closed state: it always reads the live mode */
+  if (stewardModeChipLabel) stewardModeChipLabel.textContent = stewardModeLabel(stewardMode);
+}
+
+/* a press anywhere outside the chip and its picker closes it — captured, so a
+   control that stops propagation cannot leave the picker stranded open */
+function stewardModePopOutside(event) {
+  if (!stewardModesEl || stewardModesEl.contains(event.target)) return;
+  stewardModePopClose(false);
+}
+
+/* the picker is a small trap while it is open: Tab cycles inside it, so focus
+   never lands on a control the picker is covering */
+function stewardModePopKeydown(event) {
+  if (event.key === "Escape") {
+    /* the picker answers Escape before the input and the shell do */
+    event.stopPropagation();
+    event.preventDefault();
+    stewardModePopClose(true);
+    return;
+  }
+  if (event.key !== "Tab") return;
+  const keys = stewardModeKeys().filter((key) => !key.disabled);
+  if (keys.length === 0) return;
+  event.preventDefault();
+  const at = keys.indexOf(document.activeElement);
+  const next = keys[((at < 0 ? 0 : at) + (event.shiftKey ? -1 : 1) + keys.length) % keys.length];
+  next.focus({ preventScroll: true });
+}
+
+function stewardModePopShow() {
+  if (!stewardModePop || !stewardModeChip || stewardModePopOpen) return;
+  if (stewardModesEl?.hidden) return;
+  stewardModePopOpen = true;
+  stewardModePop.hidden = false;
+  /* the picker stands inside the shell's own clip, and an empty log would leave
+     it nowhere to stand — the column reserves the room while it is open */
+  stewardConvo?.classList.add("is-picking");
+  stewardModeChip.setAttribute("aria-expanded", "true");
+  document.addEventListener("pointerdown", stewardModePopOutside, true);
+  const keys = stewardModeKeys().filter((key) => !key.disabled);
+  const checked = keys.find((key) => key.dataset.stewardMode === stewardMode);
+  (checked || keys[0] || stewardModeChip).focus({ preventScroll: true });
+}
+
+function stewardModePopClose(returnFocus = true) {
+  if (!stewardModePop || !stewardModePopOpen) return;
+  stewardModePopOpen = false;
+  const hadFocus = stewardModePop.contains(document.activeElement);
+  stewardModePop.hidden = true;
+  stewardConvo?.classList.remove("is-picking");
+  stewardModeChip?.setAttribute("aria-expanded", "false");
+  document.removeEventListener("pointerdown", stewardModePopOutside, true);
+  if (returnFocus && hadFocus) stewardModeChip?.focus({ preventScroll: true });
+}
+
+function stewardModePopToggle() {
+  if (stewardModePopOpen) stewardModePopClose();
+  else stewardModePopShow();
 }
 
 function stewardModeApply(mode) {
@@ -3100,7 +3247,10 @@ function stewardModeSelect(mode, key) {
     stewardModeApply(mode);
     return;
   }
-  stewardConsentOpen(mode, key);
+  /* the picker gets out of the way before the question is asked, and the chip —
+     not a key inside a panel that is now hidden — is where a no returns focus */
+  stewardModePopClose(false);
+  stewardConsentOpen(mode, stewardModeChip || key);
 }
 
 function stewardModesRender() {
@@ -3121,7 +3271,12 @@ function stewardModesRender() {
       key.disabled = true;
       key.title = STEWARD_MODE_UNAVAILABLE;
     }
-    key.addEventListener("click", () => stewardModeSelect(entry.mode, key));
+    key.addEventListener("click", () => {
+      stewardModeSelect(entry.mode, key);
+      /* a click — or Enter/Space on the radio — is a decision, so the picker
+         closes. Arrow keys only move the selection and leave it open. */
+      if (!stewardConsentPending) stewardModePopClose(true);
+    });
     key.addEventListener("keydown", (event) => {
       if (event.key === "ArrowRight" || event.key === "ArrowDown") {
         event.preventDefault();
@@ -3343,8 +3498,9 @@ function stewardAskBusy(busy) {
 function stewardAskGoOffline() {
   stewardAskOffline = true;
   stewardAskBusy(false);
-  /* with no endpoint there is nothing to route, so the mode strip goes too */
+  /* with no endpoint there is nothing to route, so the mode chip goes too */
   stewardConsentCancel(false);
+  stewardModePopClose(false);
   if (stewardModesEl) stewardModesEl.hidden = true;
   if (!stewardPromptForm?.isConnected) return;
   const note = document.createElement("p");
@@ -3437,7 +3593,14 @@ function stewardConvoCheck() {
   if (typeof fetch !== "function") stewardAskGoOffline();
 }
 
+function setupStewardModeChip() {
+  if (!stewardModeChip || !stewardModePop) return;
+  stewardModeChip.addEventListener("click", stewardModePopToggle);
+  stewardModePop.addEventListener("keydown", stewardModePopKeydown);
+}
+
 function setupStewardConvo() {
+  setupStewardModeChip();
   if (!stewardPromptForm) return;
   stewardPromptForm.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -3657,6 +3820,7 @@ function setupSteward() {
     if (event.key !== "Escape" || !stewardShellOpenState) return;
     stewardShellClose();
   });
+  setupStewardTabs();
   setupStewardConvo();
   stewardApplyCells(stewardDock.getAttribute("data-state"));
   stewardArmIdle();

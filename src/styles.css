@@ -4292,8 +4292,70 @@ p.timeline-details {
   overflow: hidden;
 }
 
+/* ---- the two panels ----
+   One segmented control over ASK and RECLAIM. Only one panel is mounted-visible
+   at a time; the conversation log inside ASK is never re-created, so switching
+   away and back cannot cost a turn. */
+
+.steward-tabs {
+  display: flex;
+  flex: none;
+  gap: 2px;
+  padding: 2px;
+  background: var(--well);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-sm);
+}
+
+.steward-tab {
+  flex: 1;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: var(--r-xs);
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 0.55rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  transition: background var(--d-ui) var(--ease-move), color var(--d-ui) var(--ease-move);
+}
+
+.steward-tab[aria-selected="true"] {
+  background: var(--deck-raised);
+  box-shadow: inset 0 0 0 1px var(--rule-bright);
+  color: var(--signal);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .steward-tab:hover {
+    color: var(--text);
+  }
+}
+
+@media (pointer: coarse) {
+  .steward-tab {
+    min-height: 40px;
+  }
+}
+
+/* the switch is instant: opacity only, which is why reduced motion needs no
+   exception for it. The animation replays every time `hidden` comes off. */
+.steward-tabpanel {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  animation: steward-fade-in 120ms var(--ease-move) both;
+}
+
+.steward-tabpanel[hidden] {
+  display: none;
+}
+
 .steward-shell-panel {
-  max-height: 200px;
+  max-height: min(420px, 56vh);
   overflow-y: auto;
   padding: 10px;
   background: var(--well);
@@ -4342,18 +4404,21 @@ p.timeline-details {
   list-style: none;
 }
 
+/* one fixed line per candidate. The keys hold their own width and the name
+   gives way — a row may never wrap its buttons onto a second line, at any
+   width, for any label. */
 .steward-shell-row {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
   align-items: center;
-  gap: 5px;
+  gap: 8px;
   padding: 5px 0;
   border-top: 1px solid color-mix(in oklch, var(--rule) 55%, transparent);
 }
 
 .steward-shell-name {
-  flex: 1 1 auto;
-  min-width: 48px;
+  grid-area: 1 / 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -4361,14 +4426,17 @@ p.timeline-details {
 }
 
 .steward-shell-size {
-  flex: none;
+  grid-area: 1 / 2;
+  white-space: nowrap;
   color: var(--text-3);
 }
 
-.steward-shell-actions {
-  display: flex;
-  flex: none;
-  gap: 4px;
+.steward-shell-hold {
+  grid-area: 1 / 3;
+}
+
+.steward-shell-show {
+  grid-area: 1 / 4;
 }
 
 .steward-key {
@@ -4427,9 +4495,14 @@ p.timeline-details {
   transition: none;
 }
 
-/* the stamp punches once and leaves */
+/* the stamp punches once and leaves. It is placed over the two keys rather than
+   appended after them, so the row keeps its single line while it shows. */
 .steward-stamp {
-  flex: none;
+  grid-area: 1 / 3 / 2 / 5;
+  justify-self: end;
+  align-self: center;
+  pointer-events: none;
+  background: var(--deck);
   font-size: 0.5rem;
   font-weight: 700;
   letter-spacing: 0.1em;
@@ -4478,22 +4551,16 @@ p.timeline-details {
   }
 }
 
-.steward-shell-trend,
-.steward-shell-delta,
 .steward-shell-empty {
   margin: 6px 0 0;
 }
 
-.steward-shell-trend {
-  color: var(--text-3);
-}
-
-/* the affordance line · shown once per session, under the candidates.
+/* the affordance line · one dim line, shown once per session under the
+   candidates. Not amber: it teaches a gesture, it does not warn about one.
    Opacity only, so reduced motion needs no exception for it. */
 .steward-hint {
   margin: 6px 0 0;
-  color: var(--amber);
-  line-height: 1.45;
+  color: var(--text-3);
   animation: steward-fade-in 180ms var(--ease-entrance) both;
 }
 
@@ -4506,8 +4573,22 @@ p.timeline-details {
   }
 }
 
-.steward-shell-delta {
+/* the one status line · what moved since the last reading and how far the
+   history has come, at the foot of the ASK panel. One line, always. */
+.steward-status {
+  flex: none;
+  margin: 0;
+  padding-top: 6px;
+  font-size: 0.58rem;
+  letter-spacing: 0.03em;
   color: var(--signal);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.steward-status[hidden] {
+  display: none;
 }
 
 /* ---- tier 3 · the conversation ----
@@ -4541,6 +4622,13 @@ p.timeline-details {
 /* an empty log takes no room at all — the shell opens at its old height */
 .steward-convo-log:empty {
   display: none;
+}
+
+/* …except while the mode picker is open: it stands above the chip inside the
+   shell's clip, so the column reserves the room rather than letting it be cut */
+.steward-convo.is-picking .steward-convo-log {
+  display: block;
+  min-height: 28px;
 }
 
 .steward-turn {
@@ -4597,33 +4685,46 @@ p.timeline-details {
   margin: 5px 0 0;
 }
 
-/* ---- the mode strip ----
-   Three keycaps in a radiogroup, sitting above the prompt row. Hidden entirely
-   when the server has no providers endpoint to answer with. */
+/* ---- the mode chip ----
+   The strip that owned a full row is one keycap on the prompt row now; the same
+   three radios live in a small picker above it. Hidden entirely when the server
+   has no providers endpoint to answer with. */
 
-.steward-modes {
+.steward-mode {
+  position: relative;
   display: flex;
   flex: none;
-  align-items: center;
-  gap: 6px;
-  padding-top: 8px;
-  border-top: 1px solid color-mix(in oklch, var(--rule) 55%, transparent);
 }
 
-.steward-modes[hidden] {
+.steward-mode[hidden] {
   display: none;
 }
 
-.steward-modes-label {
-  flex: none;
-  font-size: 0.5rem;
-  color: var(--text-3);
+.steward-mode-chip {
+  letter-spacing: 0.08em;
+}
+
+/* the picker stands above the chip, inside the shell's own clip — one row of
+   keycaps, so it never grows tall enough to be cut off by it */
+.steward-mode-pop {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 2;
+  padding: 8px;
+  background: var(--deck-raised);
+  border: 1px solid var(--rule-bright);
+  border-radius: var(--r-sm);
+  box-shadow: 0 8px 20px rgb(0 0 0 / 0.45);
+  animation: steward-fade-in 120ms var(--ease-entrance) both;
+}
+
+.steward-mode-pop[hidden] {
+  display: none;
 }
 
 .steward-mode-keys {
   display: flex;
-  flex: 1 1 auto;
-  flex-wrap: wrap;
   gap: 4px;
 }
 
@@ -4653,7 +4754,9 @@ p.timeline-details {
    open: the brief and the log step aside rather than push the choice out of
    view, and anything still too tall scrolls inside the panel itself */
 .steward-shell-inner.is-consenting .steward-shell-panel,
-.steward-shell-inner.is-consenting .steward-convo-log {
+.steward-shell-inner.is-consenting .steward-convo-log,
+.steward-shell-inner.is-consenting .steward-status,
+.steward-shell-inner.is-consenting .steward-tabs {
   display: none;
 }
 
@@ -4858,27 +4961,29 @@ p.timeline-details {
     text-wrap: nowrap;
   }
 
+  /* he grows 56 → 74 when he stands up, from a 50% 100% origin: the gap has to
+     clear the ~19px he gains upward or the panel sits on his head */
   .steward-shell {
     width: min(300px, calc(100vw - 36px));
-    margin-bottom: 14px;
+    margin-bottom: 30px;
   }
 
   .steward-dock[data-shell="open"] .steward-shell {
     max-height: 62vh;
   }
 
-  /* 62vh has to hold candidates + log + prompt, so the two scrollers split it
-     and the prompt row keeps its own space out of the division */
   .steward-shell-inner {
     max-height: 62vh;
   }
 
+  /* the candidates and the log are on separate tabs now, so neither has to
+     leave room for the other — each takes what 62vh can give it */
   .steward-shell-panel {
-    max-height: 28vh;
+    max-height: 46vh;
   }
 
   .steward-convo-log {
-    max-height: 24vh;
+    max-height: 40vh;
   }
 
   /* the scope needs a pointer and horizontal room; the strip carries the same
